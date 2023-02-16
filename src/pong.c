@@ -1,25 +1,31 @@
+#include <math.h>
 #include <raylib.h>
 #include <raymath.h>
-
-#define SCREEN_TITLE "Pong"
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 600
-
-#define MIN(x, y) ((x) < (y) ? (x) : (y))
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
-#define SWAP(x, y, T) do { T SWAP = x; x = y; y = SWAP; } while (0)
 
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>
 #endif
 
-Rectangle obj, target;
-Vector2 objVel;
+#define SCREEN_TITLE "Pong"
+#define SCREEN_WIDTH 800
+#define SCREEN_HEIGHT 600
+
+typedef struct CollisionData {
+    bool hit;
+    float time;
+    Vector2 contactPoint;
+    Vector2 contactNormal;
+} CollisionData;
+
+Rectangle paddleRect, ballRect;
+Vector2 ballVel;
+float ballSpeed;
 
 void Init(void);
 void UpdateDrawFrame(void);
-bool SweptAABBCollision(Rectangle rect, Vector2 vel, Rectangle targetRec, float dt,
-                        float *entryTime, Vector2 *contactPoint, Vector2 *contactNormal);
+bool AABBCheck(Rectangle rect1, Rectangle rect2);
+Rectangle SweptRectangle(Rectangle rect, Vector2 vel);
+CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target);
 
 int main(void) 
 {
@@ -51,20 +57,23 @@ int main(void)
 
 void Init(void)
 {
-    obj = (Rectangle) { 0, 0, 50, 50 };
-    obj.x = (SCREEN_WIDTH - obj.width) / 2.0f; 
+    paddleRect = (Rectangle) {0, 0, 150, 50};
+    ballRect = (Rectangle) {0, 0, 30, 30};
 
-    target = (Rectangle) { 0, 0, 300, 150 };
-    target.x = (SCREEN_WIDTH - target.width) / 2.0f;
-    target.y = (SCREEN_HEIGHT - target.height) / 2.0f;
+    paddleRect.x = (SCREEN_WIDTH - paddleRect.width)/2.0f;
+    paddleRect.y = (SCREEN_HEIGHT - paddleRect.height)/2.0f;
+    ballRect.x = (SCREEN_WIDTH - ballRect.width)/2.0f;
 
-    objVel = Vector2Zero();
+    ballSpeed = 200;
 }
 
 void UpdateDrawFrame(void)
 {
-    Vector2 input, contactPoint, contactNormal;
-    float dt, entryTime;
+    Vector2 input, ballNormalVel;
+    Rectangle ballSweptRect;
+    CollisionData collData;
+    float dt;
+    bool isColliding = false;
 
     dt = GetFrameTime();
 
@@ -82,68 +91,132 @@ void UpdateDrawFrame(void)
         input.y += 1.0f;
     }
     input = Vector2Normalize(input);
-    objVel = Vector2Scale(input, 300);
+    ballVel = Vector2Scale(input, ballSpeed);
+    ballNormalVel = Vector2Scale(ballVel, dt);
+
+    ballSweptRect = SweptRectangle(ballRect, ballNormalVel);
+
+    if (AABBCheck(ballSweptRect, paddleRect)) {
+        collData = SweptAABB(ballRect, ballNormalVel, paddleRect);
+        if (collData.hit) {
+            // resolve collision
+            isColliding = true;
+            ballRect.x = collData.contactPoint.x;
+            ballRect.y = collData.contactPoint.y;
+
+            float remainingTime = 1.0f - collData.time;
+            float dotprod = (ballNormalVel.x * collData.contactNormal.y + ballNormalVel.y * collData.contactNormal.x) * remainingTime; 
+            ballNormalVel.x = dotprod * collData.contactNormal.y; ballNormalVel.y = dotprod * collData.contactNormal.x;
+        }
+    }
+
+    ballRect.x += ballNormalVel.x;
+    ballRect.y += ballNormalVel.y;
 
     // drawing
     BeginDrawing();
     ClearBackground(DARKGRAY);
-    DrawRectangleLinesEx(obj, 1.0, WHITE);
-    if (SweptAABBCollision(obj, objVel, target, dt, &entryTime, &contactPoint, &contactNormal)) {
-        DrawRectangleLinesEx(target, 1.0, YELLOW);
-        DrawCircleV(contactPoint, 5.0f, YELLOW);
-        Vector2 normalDraw = Vector2Add(contactPoint, Vector2Scale(contactNormal, 25.0f));
-        DrawLineV(contactPoint, normalDraw, YELLOW);
-        // resolve collision
-        obj.x = contactPoint.x - obj.width/2.0f;
-        obj.y = contactPoint.y - obj.height/2.0f;
-        objVel = Vector2Zero();
-    } else {
-        DrawRectangleLinesEx(target, 1.0, WHITE);
-        obj.x += objVel.x*dt;
-        obj.y += objVel.y*dt;
+
+    Color drawColor = isColliding ? YELLOW : WHITE;
+    DrawRectangleLinesEx(paddleRect, 2, drawColor);
+    DrawRectangleLinesEx(ballRect, 2, drawColor);
+
+    if (isColliding) {
+        // draw normal and contact point
+        Vector2 normalEnd = Vector2Add(collData.contactPoint, Vector2Scale(collData.contactNormal, 100));
+        DrawCircleV(collData.contactPoint, 5, GREEN);
+        DrawLineV(collData.contactPoint, normalEnd, GREEN);
     }
+
     EndDrawing();
 }
 
-bool SweptAABBCollision(Rectangle rect, Vector2 vel, Rectangle targetRec, float dt,
-                        float *entryTime, Vector2 *contactPoint, Vector2 *contactNormal)
+bool AABBCheck(Rectangle rect1, Rectangle rect2)
 {
-    Vector2 origin;
-    Vector2 targetPos, targetEnd;
-    Vector2 near, far;
-    float exitTime;
+    return !(rect1.x + rect1.width < rect2.x || rect1.x > rect2.x + rect2.width 
+             || rect1.y + rect1.height < rect2.y || rect1.y > rect2.y + rect2.height);
+}
 
-    if (vel.x == 0.0f && vel.y == 0.0f) return false;
+Rectangle SweptRectangle(Rectangle rect, Vector2 vel)
+{
+    Rectangle sweptRect = {
+        .x = vel.x > 0.0f ? rect.x : rect.x + vel.x,
+        .y = vel.y > 0.0f ? rect.y : rect.y + vel.y,
+        .width = vel.x > 0.0f ? rect.width + vel.x : rect.width - vel.x,
+        .height = vel.y > 0.0f ? rect.height + vel.y : rect.height - vel.y
+    };
 
-    // extended target pos
-    origin = (Vector2) { rect.x + rect.width/2.0f, rect.y + rect.height/2.0f };
-    targetPos = (Vector2) { targetRec.x - rect.width/2.0f, targetRec.y - rect.height/2.0f };
-    targetEnd = (Vector2) { targetRec.x + targetRec.width + rect.width/2.0f, targetRec.y + targetRec.height + rect.height/2.0f };
+    return sweptRect;
+}
 
-    vel = Vector2Scale(vel, dt);
+CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target)
+{
+    CollisionData data;
+    Vector2 invEntry, entry, invExit, exit;
+    float entryTime, exitTime;
 
-    near = Vector2Divide(Vector2Subtract(targetPos, origin), vel);
-    far = Vector2Divide(Vector2Subtract(targetEnd, origin), vel);
+    // initialize data with no collision
+    data.hit = false;
+    data.time = 1.0f;
+    data.contactPoint = Vector2Zero();
+    data.contactNormal = Vector2Zero();
 
-    if (near.x > far.x) SWAP(near.x, far.x, float);
-    if (near.y > far.y) SWAP(near.y, far.y, float);
-
-    if (near.x > far.y || near.y > far.x) return false;
-
-    *entryTime = MAX(near.x, near.y);
-    exitTime = MIN(far.x, far.y);
-
-    if (exitTime < 0.0f) return false;
-    if (*entryTime >= 1.0f) return false;
-
-    *contactPoint = Vector2Add(origin, Vector2Scale(vel, *entryTime));
-    *contactNormal = Vector2Zero();
-
-    if (near.x > near.y) {
-        contactNormal->x = vel.x < 0.0f ? 1.0f : -1.0f;
-    } else if (near.x < near.y) {
-        contactNormal->y = vel.y < 0.0f ? 1.0f : -1.0f;
+    // find the distance between the objects on the near and far sides for both x and y
+    if (vel.x > 0.0f) {
+        invEntry.x = target.x - (rect.x + rect.width);
+        invExit.x = (target.x + target.width) - rect.x;
+    }
+    else {
+        invEntry.x = (target.x + target.width) - rect.x;
+        invExit.x = target.x - (rect.x + rect.width);
     }
 
-    return true;
+    if (vel.y > 0.0f) {
+        invEntry.y = target.y - (rect.y + rect.height);
+        invExit.y = (target.y + target.height) - rect.y;
+    }
+    else {
+        invEntry.y = (target.y + target.height) - rect.y;
+        invExit.y = target.y - (rect.y + rect.height);
+    }
+
+    // find time of collision and time of leaving for each axis
+    entry = (Vector2) { -INFINITY, -INFINITY };
+    exit = (Vector2) { INFINITY, INFINITY };
+
+    if (vel.x != 0) {
+        entry.x = invEntry.x/vel.x;
+        exit.x = invExit.x/vel.x;
+    }
+
+    if (vel.y != 0) {
+        entry.y = invEntry.y/vel.y;
+        entry.y = invEntry.y/vel.y;
+    }
+
+    entryTime = fmaxf(entry.x, entry.y); 
+    exitTime = fminf(exit.x, exit.y);
+
+    if (entryTime > exitTime || (entry.x < 0.0f && entry.y < 0.0f) || 
+            entry.x > 1.0f || entry.y > 1.0f) {
+        // no collision
+        return data;
+    }
+
+    // calculate normal
+    if (entry.x > entry.y) { 
+        data.contactNormal.x = invEntry.x < 0.0f ? 1.0f : -1.0f;
+    } 
+    else { 
+        data.contactNormal.y = invEntry.y < 0.0f ? 1.0f : -1.0f;
+    }
+
+    // calculate contact point
+    data.contactPoint.x = rect.x + vel.x*entryTime;
+    data.contactPoint.y = rect.y + vel.y*entryTime;
+
+    data.hit = true;
+    data.time = entryTime;
+
+    return data;
 }
