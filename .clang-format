@@ -27,4 +27,6 @@ IndentWidth: 4
 #   UT_Always (in configuration: Always) Use tabs whenever we need to fill whitespace that spans at least from one tab stop to the next one.
 UseTab: Never
 
+# AlignConsecutiveMacros (boolean)
+# Align macro column when they are don't have any line between them.
 AlignConsecutiveMacros: true
