@@ -24,6 +24,8 @@
 
 #define BORDER_WIDTH 20
 
+#define BOUNCE_POINTS_MAX 20
+
 typedef struct Entity {
     Rectangle rect; // position and dimensions
     Vector2 dir;    // normilized direction
@@ -40,6 +42,12 @@ typedef struct CollisionData {
 static Entity leftPaddle, rightPaddle, ball;
 static int topLimit, rightLimit, bottomLimit, leftLimit;
 
+static bool topReflect;
+static Vector2 topReflectPoint;
+
+static Vector2 bouncePoints[BOUNCE_POINTS_MAX];
+static int bouncePointsCount;
+
 // -----------------------------------------------------------------------------
 // Module declaration
 // -----------------------------------------------------------------------------
@@ -53,6 +61,12 @@ static float KeyboardInput(void);
 static void DrawGame(void);
 
 // Collision detection
+static bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel);
+static void CalculateBouncePoints(void);
+static bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir,
+                             Vector2 lineStart, Vector2 lineEnd,
+                             Vector2 *collPoint, float *collTime);
+static float Vector2CrossProduct(Vector2 v1, Vector2 v2);
 static bool AABBCheck(Rectangle rect1, Rectangle rect2);
 static Rectangle SweptRectangle(Rectangle rect, Vector2 vel);
 static CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target);
@@ -114,7 +128,13 @@ void ResetGame(void) {
         SCREEN_WIDTH - PADDLE_HOR_OFFSET - rightPaddle.rect.width;
     rightPaddle.rect.y = leftPaddle.rect.y;
 
+    // IA
+    topReflect = false;
+    topReflectPoint = Vector2Zero();
+
     ResetBall();
+
+    CalculateBouncePoints();
 }
 
 static void ResetBall(void) {
@@ -149,54 +169,17 @@ static void GameLoop(void) {
 
     // update ball
     Vector2 ballVel = Vector2Scale(ball.dir, ball.speed * dt);
-    Rectangle ballRectSwept = SweptRectangle(ball.rect, ballVel);
-    CollisionData ballCollLeftPaddle = {0};
-    CollisionData ballCollRightPaddle = {0};
+    bool hitLeftPaddle, hitRightPaddle;
 
-    if (AABBCheck(ballRectSwept, leftPaddle.rect)) {
-        ballCollLeftPaddle = SweptAABB(ball.rect, ballVel, leftPaddle.rect);
-        if (ballCollLeftPaddle.hit) {
-            ball.rect.x = ballCollLeftPaddle.contactPoint.x;
-            ball.rect.y = ballCollLeftPaddle.contactPoint.y;
+    hitLeftPaddle = ResolveCollBallPaddle(leftPaddle, ballVel);
+    hitRightPaddle = ResolveCollBallPaddle(rightPaddle, ballVel);
 
-            if (ballCollLeftPaddle.contactNormal.x == 0) {
-                // colided from top or bottom
-                ball.dir.y *= -1.0f;
-            } else {
-                // collided from the front
-                ball.dir.x *= -1.0f;
-                ball.dir.y =
-                    2 * (ball.rect.y - leftPaddle.rect.y + ball.rect.height) /
-                        (PADDLE_HEIGHT + ball.rect.height) -
-                    1.0f;
-                ball.dir = Vector2Normalize(ball.dir);
-            }
-        }
-    }
-    if (AABBCheck(ballRectSwept, rightPaddle.rect)) {
-        ballCollRightPaddle = SweptAABB(ball.rect, ballVel, rightPaddle.rect);
-        if (ballCollRightPaddle.hit) {
-            // resolve and reflect
-            ball.rect.x = ballCollRightPaddle.contactPoint.x;
-            ball.rect.y = ballCollRightPaddle.contactPoint.y;
-            if (ballCollRightPaddle.contactNormal.x == 0) {
-                // colided from top or bottom
-                ball.dir.y *= -1.0f;
-            } else {
-                // collided from the front
-                ball.dir.x *= -1.0f;
-                ball.dir.y =
-                    2 * (ball.rect.y - rightPaddle.rect.y + ball.rect.height) /
-                        (PADDLE_HEIGHT + ball.rect.height) -
-                    1.0f;
-                ball.dir = Vector2Normalize(ball.dir);
-            }
-        }
-    }
-
-    if (!ballCollLeftPaddle.hit && !ballCollRightPaddle.hit) {
+    if (!hitLeftPaddle && !hitRightPaddle) {
         ball.rect.x += ballVel.x;
         ball.rect.y += ballVel.y;
+    } else {
+        CalculateBouncePoints();
+        TraceLog(LOG_DEBUG, "points count: %d", bouncePointsCount);
     }
 
     // reflect ball screen border
@@ -241,7 +224,106 @@ static void DrawGame(void) {
     DrawRectangleRec(rightPaddle.rect, WHITE);
     DrawRectangleRec(ball.rect, WHITE);
 
+    // bounce points
+    DrawRectangleV(bouncePoints[0], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
+    for (int i = 1; i < bouncePointsCount && i < BOUNCE_POINTS_MAX; ++i) {
+        DrawRectangleV(bouncePoints[i], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
+        DrawLineV(bouncePoints[i-1], bouncePoints[i], GREEN);
+    }
+
     EndDrawing();
+}
+
+static bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel) {
+    Rectangle ballRectSwept = SweptRectangle(ball.rect, ballVel);
+    CollisionData collData = {0};
+
+    if (AABBCheck(ballRectSwept, paddle.rect)) {
+        collData = SweptAABB(ball.rect, ballVel, paddle.rect);
+        if (collData.hit) {
+            ball.rect.x = collData.contactPoint.x;
+            ball.rect.y = collData.contactPoint.y;
+
+            if (collData.contactNormal.x == 0) {
+                // colided from top or bottom
+                ball.dir.y *= -1.0f;
+            } else {
+                // collided from the front
+                ball.dir.x *= -1.0f;
+                ball.dir.y =
+                    (2 * (ball.rect.y - paddle.rect.y + ball.rect.height) /
+                     (PADDLE_HEIGHT + ball.rect.height)) -
+                    1.0f;
+                ball.dir = Vector2Normalize(ball.dir);
+            }
+        }
+    }
+
+    return collData.hit;
+}
+
+static void CalculateBouncePoints(void) {
+    Vector2 lineStart, lineEnd;
+    Vector2 curDir, hitPoint;
+    bool hitTop, hitRight, hitBottom, hitLeft;
+    float hitTime;
+
+    // the first point is where the ball is
+    bouncePointsCount = 0;
+    bouncePoints[0] = (Vector2){ball.rect.x, ball.rect.y};
+    curDir = ball.dir;
+
+    while (bouncePointsCount < BOUNCE_POINTS_MAX) {
+        // check top bounce
+        lineStart = (Vector2){0, BORDER_WIDTH};
+        lineEnd = (Vector2){SCREEN_WIDTH, BORDER_WIDTH};
+        hitTop = RayIntersectLine(bouncePoints[bouncePointsCount], curDir, lineStart, lineEnd, &hitPoint, &hitTime);
+        if (hitTop) {
+            curDir = Vector2Reflect(curDir, (Vector2){0.0f, 1.0f});
+            bouncePoints[++bouncePointsCount] = hitPoint;
+            continue;
+        }
+
+        // check bottom bounce
+        lineStart = (Vector2){0, SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
+        lineEnd = (Vector2){SCREEN_WIDTH, SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
+        hitBottom = RayIntersectLine(bouncePoints[bouncePointsCount], curDir, lineStart, lineEnd, &hitPoint, &hitTime);
+        if (hitBottom) {
+            curDir = Vector2Reflect(curDir, (Vector2){0.0f, -1.0f});
+            bouncePoints[++bouncePointsCount] = hitPoint;
+            continue;
+        }
+
+        // we can break if don't reach any of the above
+        break;
+    }
+}
+
+static bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir,
+                             Vector2 lineStart, Vector2 lineEnd,
+                             Vector2 *collPoint, float *collTime) {
+    Vector2 a = rayOrigin, r = rayDir;
+    Vector2 c = lineStart, s = Vector2Subtract(lineEnd, lineStart);
+
+    float rCrossS = Vector2CrossProduct(r, s);
+    if (FloatEquals(rCrossS, 0.0f)) {
+        return false;
+    }
+
+    float t1 = Vector2CrossProduct(Vector2Subtract(c, a), s) / rCrossS;
+    float t2 = Vector2CrossProduct(Vector2Subtract(c, a), r) / rCrossS;
+
+    if (t1 >= 0.0f && (0.0f <= t2 && t2 <= 1.0f)) {
+        *collPoint = Vector2Add(a, Vector2Scale(r, t1));
+        *collTime = t1;
+        return true;
+    }
+
+    return false;
+}
+
+static float Vector2CrossProduct(Vector2 v1, Vector2 v2) {
+    return v1.x * v2.y - v1.y * v2.x;
 }
 
 static bool AABBCheck(Rectangle rect1, Rectangle rect2) {
