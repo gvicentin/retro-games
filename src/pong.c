@@ -42,11 +42,12 @@ typedef struct CollisionData {
 static Entity leftPaddle, rightPaddle, ball;
 static int topLimit, rightLimit, bottomLimit, leftLimit;
 
-static bool topReflect;
-static Vector2 topReflectPoint;
-
 static Vector2 bouncePoints[BOUNCE_POINTS_MAX];
 static int bouncePointsCount;
+
+// start and end line points
+static Vector2 topSP, rightSP, bottomSP, leftSP;
+static Vector2 topEP, rightEP, bottomEP, leftEP;
 
 // -----------------------------------------------------------------------------
 // Module declaration
@@ -129,12 +130,24 @@ void ResetGame(void) {
     rightPaddle.rect.y = leftPaddle.rect.y;
 
     // IA
-    topReflect = false;
-    topReflectPoint = Vector2Zero();
+    topSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH, BORDER_WIDTH};
+    topEP = (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
+                      BORDER_WIDTH};
+    rightSP =
+        (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
+                  BORDER_WIDTH};
+    rightEP =
+        (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
+                  SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
+    bottomSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH,
+                         SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
+    bottomEP = (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
+                         SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
+    leftSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH, BORDER_WIDTH};
+    leftEP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH,
+                       SCREEN_HEIGHT - BORDER_WIDTH};
 
     ResetBall();
-
-    CalculateBouncePoints();
 }
 
 static void ResetBall(void) {
@@ -179,7 +192,6 @@ static void GameLoop(void) {
         ball.rect.y += ballVel.y;
     } else {
         CalculateBouncePoints();
-        TraceLog(LOG_DEBUG, "points count: %d", bouncePointsCount);
     }
 
     // reflect ball screen border
@@ -226,10 +238,16 @@ static void DrawGame(void) {
 
     // bounce points
     DrawRectangleV(bouncePoints[0], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
-    for (int i = 1; i < bouncePointsCount && i < BOUNCE_POINTS_MAX; ++i) {
-        DrawRectangleV(bouncePoints[i], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
-        DrawLineV(bouncePoints[i-1], bouncePoints[i], GREEN);
+    for (int i = 1; i <= bouncePointsCount && i < BOUNCE_POINTS_MAX; ++i) {
+        DrawRectangleV(bouncePoints[i], (Vector2){BALL_WIDTH, BALL_HEIGHT},
+                       GREEN);
+        DrawLineV(bouncePoints[i - 1], bouncePoints[i], GREEN);
     }
+
+    DrawLineEx(topSP, topEP, 2.0f, BLUE);
+    DrawLineEx(rightSP, rightEP, 2.0f, BLUE);
+    DrawLineEx(bottomSP, bottomEP, 2.0f, BLUE);
+    DrawLineEx(leftSP, leftEP, 2.0f, BLUE);
 
     EndDrawing();
 }
@@ -263,7 +281,6 @@ static bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel) {
 }
 
 static void CalculateBouncePoints(void) {
-    Vector2 lineStart, lineEnd;
     Vector2 curDir, hitPoint;
     bool hitTop, hitRight, hitBottom, hitLeft;
     float hitTime;
@@ -275,23 +292,45 @@ static void CalculateBouncePoints(void) {
 
     while (bouncePointsCount < BOUNCE_POINTS_MAX) {
         // check top bounce
-        lineStart = (Vector2){0, BORDER_WIDTH};
-        lineEnd = (Vector2){SCREEN_WIDTH, BORDER_WIDTH};
-        hitTop = RayIntersectLine(bouncePoints[bouncePointsCount], curDir, lineStart, lineEnd, &hitPoint, &hitTime);
-        if (hitTop) {
-            curDir = Vector2Reflect(curDir, (Vector2){0.0f, 1.0f});
-            bouncePoints[++bouncePointsCount] = hitPoint;
-            continue;
+        if (curDir.y < 0.0f) {
+            hitTop = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
+                    topSP, topEP, &hitPoint, &hitTime);
+            if (hitTop) {
+                curDir = Vector2Reflect(curDir, (Vector2){0.0f, 1.0f});
+                bouncePoints[++bouncePointsCount] = hitPoint;
+                continue;
+            }
+        }
+
+        if (curDir.x > 0.0f) {
+            hitRight = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
+                    rightSP, rightEP, &hitPoint, &hitTime);
+            if (hitRight) {
+                curDir = Vector2Reflect(curDir, (Vector2){-1.0f, 0.0f});
+                bouncePoints[++bouncePointsCount] = hitPoint;
+                break;
+            }
         }
 
         // check bottom bounce
-        lineStart = (Vector2){0, SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
-        lineEnd = (Vector2){SCREEN_WIDTH, SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
-        hitBottom = RayIntersectLine(bouncePoints[bouncePointsCount], curDir, lineStart, lineEnd, &hitPoint, &hitTime);
-        if (hitBottom) {
-            curDir = Vector2Reflect(curDir, (Vector2){0.0f, -1.0f});
-            bouncePoints[++bouncePointsCount] = hitPoint;
-            continue;
+        if (curDir.y > 0.0f) {
+            hitBottom = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
+                    bottomSP, bottomEP, &hitPoint, &hitTime);
+            if (hitBottom) {
+                curDir = Vector2Reflect(curDir, (Vector2){0.0f, -1.0f});
+                bouncePoints[++bouncePointsCount] = hitPoint;
+                continue;
+            }
+        }
+
+        if (curDir.x < 0.0f) {
+            hitLeft = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
+                    leftSP, leftEP, &hitPoint, &hitTime);
+            if (hitLeft) {
+                curDir = Vector2Reflect(curDir, (Vector2){1.0f, 0.0f});
+                bouncePoints[++bouncePointsCount] = hitPoint;
+                break;
+            }
         }
 
         // we can break if don't reach any of the above
