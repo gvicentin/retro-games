@@ -45,6 +45,8 @@ static int topLimit, rightLimit, bottomLimit, leftLimit;
 static Vector2 bouncePoints[BOUNCE_POINTS_MAX];
 static int bouncePointsCount;
 
+static Vector2 iaTargetPos;
+
 // start and end line points
 static Vector2 topSP, rightSP, bottomSP, leftSP;
 static Vector2 topEP, rightEP, bottomEP, leftEP;
@@ -147,6 +149,7 @@ void ResetGame(void) {
     leftEP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH,
                        SCREEN_HEIGHT - BORDER_WIDTH};
 
+    iaTargetPos = (Vector2){leftPaddle.rect.x, leftPaddle.rect.y};
     ResetBall();
 }
 
@@ -156,6 +159,11 @@ static void ResetBall(void) {
     ball.dir.x = GetRandomValue(0, 1) == 0 ? -1.0f : 1.0f;
     ball.dir.y = GetRandomValue(0, 1000) / 1000.0f;
     ball.dir = Vector2Normalize(ball.dir);
+
+    if (ball.dir.x < 0.0f) {
+        CalculateBouncePoints();
+        iaTargetPos = bouncePoints[bouncePointsCount];
+    }
 }
 
 static void GameLoop(void) {
@@ -166,7 +174,7 @@ static void GameLoop(void) {
     // update paddles
     float dt = GetFrameTime();
     rightPaddle.rect.y += rightPaddle.dir.y * rightPaddle.speed * dt;
-    leftPaddle.rect.y = ball.rect.y;
+    leftPaddle.rect.y = iaTargetPos.y - (PADDLE_HEIGHT - BALL_HEIGHT)/2.0f;
 
     // keep paddles on screen
     if (rightPaddle.rect.y < topLimit) {
@@ -192,6 +200,9 @@ static void GameLoop(void) {
         ball.rect.y += ballVel.y;
     } else {
         CalculateBouncePoints();
+        if (hitRightPaddle) {
+            iaTargetPos = bouncePoints[bouncePointsCount];
+        }
     }
 
     // reflect ball screen border
