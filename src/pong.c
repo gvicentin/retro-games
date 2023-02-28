@@ -45,7 +45,7 @@ static int topLimit, rightLimit, bottomLimit, leftLimit;
 static Vector2 bouncePoints[BOUNCE_POINTS_MAX];
 static int bouncePointsCount;
 
-static Vector2 iaTargetPos;
+static float iaTargetPos, iaHitPos;
 
 // start and end line points
 static Vector2 topSP, rightSP, bottomSP, leftSP;
@@ -133,8 +133,9 @@ void ResetGame(void) {
 
     // IA
     topSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH, BORDER_WIDTH};
-    topEP = (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
-                      BORDER_WIDTH};
+    topEP =
+        (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
+                  BORDER_WIDTH};
     rightSP =
         (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
                   BORDER_WIDTH};
@@ -143,13 +144,16 @@ void ResetGame(void) {
                   SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
     bottomSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH,
                          SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
-    bottomEP = (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
-                         SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
+    bottomEP =
+        (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
+                  SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
     leftSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH, BORDER_WIDTH};
     leftEP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH,
                        SCREEN_HEIGHT - BORDER_WIDTH};
 
-    iaTargetPos = (Vector2){leftPaddle.rect.x, leftPaddle.rect.y};
+    iaTargetPos = leftPaddle.rect.y;
+    iaHitPos = PADDLE_HEIGHT/2.0f;
+
     ResetBall();
 }
 
@@ -162,7 +166,7 @@ static void ResetBall(void) {
 
     if (ball.dir.x < 0.0f) {
         CalculateBouncePoints();
-        iaTargetPos = bouncePoints[bouncePointsCount];
+        iaTargetPos = bouncePoints[bouncePointsCount].y;
     }
 }
 
@@ -174,7 +178,19 @@ static void GameLoop(void) {
     // update paddles
     float dt = GetFrameTime();
     rightPaddle.rect.y += rightPaddle.dir.y * rightPaddle.speed * dt;
-    leftPaddle.rect.y = iaTargetPos.y - (PADDLE_HEIGHT - BALL_HEIGHT)/2.0f;
+
+    // ia paddle
+    float leftPaddleY = leftPaddle.rect.y + iaHitPos;
+    float leftPaddlePosDiff = (iaTargetPos - leftPaddleY > 0.0f) ? 1.0f : -1.0f;
+    float leftPaddleFuturePos = PADDLE_SPEED*dt;
+
+    if (leftPaddlePosDiff > 0.0f && leftPaddleY + leftPaddleFuturePos > iaTargetPos) {
+        leftPaddle.rect.y = iaTargetPos - iaHitPos;
+    } else if (leftPaddlePosDiff < 0.0f && leftPaddleY - leftPaddleFuturePos < iaTargetPos) {
+        leftPaddle.rect.y = iaTargetPos - iaHitPos;
+    } else {
+        leftPaddle.rect.y += leftPaddlePosDiff * leftPaddleFuturePos;
+    }
 
     // keep paddles on screen
     if (rightPaddle.rect.y < topLimit) {
@@ -201,7 +217,8 @@ static void GameLoop(void) {
     } else {
         CalculateBouncePoints();
         if (hitRightPaddle) {
-            iaTargetPos = bouncePoints[bouncePointsCount];
+            iaTargetPos = bouncePoints[bouncePointsCount].y;
+            iaHitPos = GetRandomValue(0, 1000) / 1000.0f * PADDLE_HEIGHT;
         }
     }
 
@@ -305,7 +322,7 @@ static void CalculateBouncePoints(void) {
         // check top bounce
         if (curDir.y < 0.0f) {
             hitTop = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
-                    topSP, topEP, &hitPoint, &hitTime);
+                                      topSP, topEP, &hitPoint, &hitTime);
             if (hitTop) {
                 curDir = Vector2Reflect(curDir, (Vector2){0.0f, 1.0f});
                 bouncePoints[++bouncePointsCount] = hitPoint;
@@ -315,7 +332,7 @@ static void CalculateBouncePoints(void) {
 
         if (curDir.x > 0.0f) {
             hitRight = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
-                    rightSP, rightEP, &hitPoint, &hitTime);
+                                        rightSP, rightEP, &hitPoint, &hitTime);
             if (hitRight) {
                 curDir = Vector2Reflect(curDir, (Vector2){-1.0f, 0.0f});
                 bouncePoints[++bouncePointsCount] = hitPoint;
@@ -325,8 +342,9 @@ static void CalculateBouncePoints(void) {
 
         // check bottom bounce
         if (curDir.y > 0.0f) {
-            hitBottom = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
-                    bottomSP, bottomEP, &hitPoint, &hitTime);
+            hitBottom =
+                RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
+                                 bottomSP, bottomEP, &hitPoint, &hitTime);
             if (hitBottom) {
                 curDir = Vector2Reflect(curDir, (Vector2){0.0f, -1.0f});
                 bouncePoints[++bouncePointsCount] = hitPoint;
@@ -336,7 +354,7 @@ static void CalculateBouncePoints(void) {
 
         if (curDir.x < 0.0f) {
             hitLeft = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
-                    leftSP, leftEP, &hitPoint, &hitTime);
+                                       leftSP, leftEP, &hitPoint, &hitTime);
             if (hitLeft) {
                 curDir = Vector2Reflect(curDir, (Vector2){1.0f, 0.0f});
                 bouncePoints[++bouncePointsCount] = hitPoint;
