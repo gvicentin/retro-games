@@ -16,11 +16,13 @@
 #define PADDLE_WIDTH      20
 #define PADDLE_HEIGHT     80
 #define PADDLE_SPEED      600
+#define PADDLE_IA_SPEED   400
 #define PADDLE_HOR_OFFSET 30
 
-#define BALL_WIDTH         15
-#define BALL_HEIGHT        15
-#define BALL_INITIAL_SPEED 300
+#define BALL_WIDTH           15
+#define BALL_HEIGHT          15
+#define BALL_INITIAL_SPEED   400
+#define BALL_SPEED_INCREMENT 100
 
 #define BORDER_WIDTH 20
 
@@ -39,13 +41,16 @@ typedef struct CollisionData {
     Vector2 contactNormal; // surface normal where collide
 } CollisionData;
 
+static bool debugMode;
+
 static Entity leftPaddle, rightPaddle, ball;
 static int topLimit, rightLimit, bottomLimit, leftLimit;
+static int hitCounter;
 
 static Vector2 bouncePoints[BOUNCE_POINTS_MAX];
 static int bouncePointsCount;
 
-static float iaTargetPos, iaHitPos;
+static float iaTargetPos, iaHitPos, iaResponseTime, iaTimer;
 
 // start and end line points
 static Vector2 topSP, rightSP, bottomSP, leftSP;
@@ -108,11 +113,13 @@ int main(void) {
 // Module implementation
 // -----------------------------------------------------------------------------
 void ResetGame(void) {
+    debugMode = false;
+
     // initialize globals
     leftPaddle =
         (Entity){.rect = (Rectangle){0, 0, PADDLE_WIDTH, PADDLE_HEIGHT},
                  .dir = (Vector2){0},
-                 .speed = PADDLE_SPEED};
+                 .speed = PADDLE_IA_SPEED};
     rightPaddle = leftPaddle;
     ball = (Entity){.rect = (Rectangle){0, 0, BALL_WIDTH, BALL_HEIGHT},
                     .dir = (Vector2){0},
@@ -130,6 +137,7 @@ void ResetGame(void) {
     rightPaddle.rect.x =
         SCREEN_WIDTH - PADDLE_HOR_OFFSET - rightPaddle.rect.width;
     rightPaddle.rect.y = leftPaddle.rect.y;
+    rightPaddle.speed = PADDLE_SPEED;
 
     // IA
     topSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH, BORDER_WIDTH};
@@ -152,12 +160,17 @@ void ResetGame(void) {
                        SCREEN_HEIGHT - BORDER_WIDTH};
 
     iaTargetPos = leftPaddle.rect.y;
-    iaHitPos = PADDLE_HEIGHT/2.0f;
+    iaHitPos = PADDLE_HEIGHT / 2.0f;
+    iaResponseTime = 0.3f;
+    iaTimer = 0.0f;
 
     ResetBall();
 }
 
 static void ResetBall(void) {
+    hitCounter = 0;
+    ball.speed = BALL_INITIAL_SPEED;
+
     ball.rect.x = (SCREEN_WIDTH - ball.rect.width) / 2.0f;
     ball.rect.y = (SCREEN_HEIGHT - ball.rect.height) / 2.0f;
     ball.dir.x = GetRandomValue(0, 1) == 0 ? -1.0f : 1.0f;
@@ -171,6 +184,10 @@ static void ResetBall(void) {
 }
 
 static void GameLoop(void) {
+    if (IsKeyPressed(KEY_D)) {
+        debugMode = !debugMode;
+    }
+
     // get input
     float input = KeyboardInput();
     rightPaddle.dir.y = input;
@@ -180,16 +197,21 @@ static void GameLoop(void) {
     rightPaddle.rect.y += rightPaddle.dir.y * rightPaddle.speed * dt;
 
     // ia paddle
+    iaTimer += dt;
     float leftPaddleY = leftPaddle.rect.y + iaHitPos;
     float leftPaddlePosDiff = (iaTargetPos - leftPaddleY > 0.0f) ? 1.0f : -1.0f;
-    float leftPaddleFuturePos = PADDLE_SPEED*dt;
+    float leftPaddleFuturePos = leftPaddle.speed * dt;
 
-    if (leftPaddlePosDiff > 0.0f && leftPaddleY + leftPaddleFuturePos > iaTargetPos) {
-        leftPaddle.rect.y = iaTargetPos - iaHitPos;
-    } else if (leftPaddlePosDiff < 0.0f && leftPaddleY - leftPaddleFuturePos < iaTargetPos) {
-        leftPaddle.rect.y = iaTargetPos - iaHitPos;
-    } else {
-        leftPaddle.rect.y += leftPaddlePosDiff * leftPaddleFuturePos;
+    if (iaTimer > iaResponseTime) {
+        if (leftPaddlePosDiff > 0.0f &&
+                leftPaddleY + leftPaddleFuturePos > iaTargetPos) {
+            leftPaddle.rect.y = iaTargetPos - iaHitPos;
+        } else if (leftPaddlePosDiff < 0.0f &&
+                leftPaddleY - leftPaddleFuturePos < iaTargetPos) {
+            leftPaddle.rect.y = iaTargetPos - iaHitPos;
+        } else {
+            leftPaddle.rect.y += leftPaddlePosDiff * leftPaddleFuturePos;
+        }
     }
 
     // keep paddles on screen
@@ -219,7 +241,17 @@ static void GameLoop(void) {
         if (hitRightPaddle) {
             iaTargetPos = bouncePoints[bouncePointsCount].y;
             iaHitPos = GetRandomValue(0, 1000) / 1000.0f * PADDLE_HEIGHT;
+        } else {
+            // ia hit the ball
+            iaTargetPos = GetRandomValue(0, SCREEN_HEIGHT);
+            iaHitPos = 0.0f;
         }
+
+        // speed up ball
+        ball.speed = BALL_INITIAL_SPEED + BALL_SPEED_INCREMENT * sqrtf(++hitCounter);
+        
+        // reset timer for ia
+        iaTimer = 0.0f;
     }
 
     // reflect ball screen border
@@ -264,18 +296,20 @@ static void DrawGame(void) {
     DrawRectangleRec(rightPaddle.rect, WHITE);
     DrawRectangleRec(ball.rect, WHITE);
 
-    // bounce points
-    DrawRectangleV(bouncePoints[0], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
-    for (int i = 1; i <= bouncePointsCount && i < BOUNCE_POINTS_MAX; ++i) {
-        DrawRectangleV(bouncePoints[i], (Vector2){BALL_WIDTH, BALL_HEIGHT},
-                       GREEN);
-        DrawLineV(bouncePoints[i - 1], bouncePoints[i], GREEN);
-    }
+    if (debugMode) {
+        // bounce points
+        DrawRectangleV(bouncePoints[0], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
+        for (int i = 1; i <= bouncePointsCount && i < BOUNCE_POINTS_MAX; ++i) {
+            DrawRectangleV(bouncePoints[i], (Vector2){BALL_WIDTH, BALL_HEIGHT},
+                    GREEN);
+            DrawLineV(bouncePoints[i - 1], bouncePoints[i], GREEN);
+        }
 
-    DrawLineEx(topSP, topEP, 2.0f, BLUE);
-    DrawLineEx(rightSP, rightEP, 2.0f, BLUE);
-    DrawLineEx(bottomSP, bottomEP, 2.0f, BLUE);
-    DrawLineEx(leftSP, leftEP, 2.0f, BLUE);
+        DrawLineEx(topSP, topEP, 2.0f, BLUE);
+        DrawLineEx(rightSP, rightEP, 2.0f, BLUE);
+        DrawLineEx(bottomSP, bottomEP, 2.0f, BLUE);
+        DrawLineEx(leftSP, leftEP, 2.0f, BLUE);
+    }
 
     EndDrawing();
 }
