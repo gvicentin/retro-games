@@ -24,7 +24,7 @@
 #define BALL_INITIAL_SPEED   400
 #define BALL_SPEED_INCREMENT 100
 
-#define BORDER_WIDTH 20
+#define BORDER_WIDTH 15
 
 #define BOUNCE_POINTS_MAX 20
 
@@ -42,6 +42,8 @@ typedef struct CollisionData {
 } CollisionData;
 
 static bool debugMode;
+
+static int leftScore, rightScore;
 
 static Entity leftPaddle, rightPaddle, ball;
 static int topLimit, rightLimit, bottomLimit, leftLimit;
@@ -114,6 +116,8 @@ int main(void) {
 // -----------------------------------------------------------------------------
 void ResetGame(void) {
     debugMode = false;
+    leftScore = 0;
+    rightScore = 0;
 
     // initialize globals
     leftPaddle =
@@ -161,7 +165,7 @@ void ResetGame(void) {
 
     iaTargetPos = leftPaddle.rect.y;
     iaHitPos = PADDLE_HEIGHT / 2.0f;
-    iaResponseTime = 0.3f;
+    iaResponseTime = 0.5f;
     iaTimer = 0.0f;
 
     ResetBall();
@@ -263,8 +267,21 @@ static void GameLoop(void) {
         ball.dir.y *= -1.0f;
     }
 
-    if (ball.rect.x + ball.rect.width < 0.0f || ball.rect.x > SCREEN_WIDTH) {
+    if (ball.rect.x + ball.rect.width < 0.0f) {
         ResetBall();
+        ++rightScore;
+        TraceLog(LOG_DEBUG, "Score: %dx%d", leftScore, rightScore);
+    }
+    else if (ball.rect.x > SCREEN_WIDTH) {
+        ResetBall();
+        ++leftScore;
+        TraceLog(LOG_DEBUG, "Score: %dx%d", leftScore, rightScore);
+    }
+
+    // Check game over
+    if (leftScore > 9 || rightScore > 9) {
+        TraceLog(LOG_DEBUG, "Game over");
+        ResetGame();
     }
 
     DrawGame();
@@ -295,6 +312,22 @@ static void DrawGame(void) {
     DrawRectangleRec(leftPaddle.rect, WHITE);
     DrawRectangleRec(rightPaddle.rect, WHITE);
     DrawRectangleRec(ball.rect, WHITE);
+
+    // middle line
+    int xMiddle = (SCREEN_WIDTH - BALL_WIDTH)/2.0f;
+    for (int y = 2 * BORDER_WIDTH; y < SCREEN_HEIGHT; y += 2 * BALL_HEIGHT) {
+        DrawRectangle(xMiddle, y, BALL_WIDTH, BALL_HEIGHT, COLOR_ENITIES);
+    }
+
+    // Draw score
+    int fontSize = 90;
+    const char *leftScoreText = TextFormat("%d", leftScore);
+    const char *rightScoreText = TextFormat("%d", rightScore);
+    int leftTextSize = MeasureText(leftScoreText, fontSize);
+    int rightTextSize = MeasureText(rightScoreText, fontSize);
+
+    DrawText(leftScoreText, 3.0f*SCREEN_WIDTH/8.0f - leftTextSize /2.0f, 50, fontSize, WHITE);
+    DrawText(rightScoreText, 5.0f*SCREEN_WIDTH/8.0f - rightTextSize/2.0f, 50, fontSize, WHITE);
 
     if (debugMode) {
         // bounce points
