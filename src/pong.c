@@ -1,6 +1,7 @@
 #include <math.h>
 #include <raylib.h>
 #include <raymath.h>
+#include <stdlib.h>
 
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
@@ -28,6 +29,20 @@
 
 #define BOUNCE_POINTS_MAX 20
 
+typedef enum {
+    SCREEN_NONE = 0,
+    SCREEN_MENU,
+    SCREEN_GAME,
+    SCREEN_COUNT
+} ScreenState;
+
+typedef struct Screen {
+    void (*init)(void);
+    void (*update)(float dt);
+    void (*render)(void);
+    bool hasFinished;
+} Screen;
+
 typedef struct Entity {
     Rectangle rect; // position and dimensions
     Vector2 dir;    // normilized direction
@@ -40,6 +55,9 @@ typedef struct CollisionData {
     Vector2 contactPoint;  // collision point for restitution
     Vector2 contactNormal; // surface normal where collide
 } CollisionData;
+
+static Screen screens[SCREEN_COUNT];
+static ScreenState currentScreen, nextScreen;
 
 static bool debugMode;
 
@@ -61,25 +79,33 @@ static Vector2 topEP, rightEP, bottomEP, leftEP;
 // -----------------------------------------------------------------------------
 // Module declaration
 // -----------------------------------------------------------------------------
-// Initialization
-static void ResetGame(void);
-static void ResetBall(void);
+// Screen management
+void InitScreen(ScreenState initialScreen);
+void SetNextScreen(ScreenState state);
+bool ScreenShouldClose(void);
+void UpdateScreen(void);
 
-// Game loop
-static void GameLoop(void);
-static float KeyboardInput(void);
-static void DrawGame(void);
+// Menu screen
+void InitMenuScreen(void);
+void UpdateMenuScreen(float dt);
+void RenderMenuScreen(void);
+
+// Game screen
+void InitGameScreen(void);
+void UpdateGameScreen(float dt);
+void RenderGameScreen(void);
+void ResetBall(void);
+float KeyboardInput(void);
 
 // Collision detection
-static bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel);
-static void CalculateBouncePoints(void);
-static bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir,
-                             Vector2 lineStart, Vector2 lineEnd,
-                             Vector2 *collPoint, float *collTime);
-static float Vector2CrossProduct(Vector2 v1, Vector2 v2);
-static bool AABBCheck(Rectangle rect1, Rectangle rect2);
-static Rectangle SweptRectangle(Rectangle rect, Vector2 vel);
-static CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target);
+bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel);
+void CalculateBouncePoints(void);
+bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir, Vector2 lineStart,
+                      Vector2 lineEnd, Vector2 *collPoint, float *collTime);
+float Vector2CrossProduct(Vector2 v1, Vector2 v2);
+bool AABBCheck(Rectangle rect1, Rectangle rect2);
+Rectangle SweptRectangle(Rectangle rect, Vector2 vel);
+CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target);
 
 // -----------------------------------------------------------------------------
 // Entrypoint
@@ -90,18 +116,18 @@ int main(void) {
 
     // initialization
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE);
-    ResetGame();
+    InitScreen(SCREEN_MENU);
 
 #if defined(PLATFORM_WEB)
-    emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
+    emscripten_set_main_loop(UpdateScreen, 0, 1);
 #else
     // pos configuration, must happen after window creation
     SetTargetFPS(60);
     SetExitKey(KEY_NULL);
 
     // gameloop
-    while (!WindowShouldClose()) {
-        GameLoop();
+    while (!WindowShouldClose() && !ScreenShouldClose()) {
+        UpdateScreen();
     }
 #endif
 
@@ -114,7 +140,93 @@ int main(void) {
 // -----------------------------------------------------------------------------
 // Module implementation
 // -----------------------------------------------------------------------------
-void ResetGame(void) {
+Screen CreateScreen(ScreenState screenState) {
+    Screen screen;
+    screen.hasFinished = false;
+
+    switch (screenState) {
+    case SCREEN_MENU:
+        screen.init = &InitMenuScreen;
+        screen.update = &UpdateMenuScreen;
+        screen.render = &RenderMenuScreen;
+        break;
+    case SCREEN_GAME:
+        screen.init = &InitGameScreen;
+        screen.update = &UpdateGameScreen;
+        screen.render = &RenderGameScreen;
+        break;
+    default:
+        screen.init = NULL;
+        screen.update = NULL;
+        screen.render = NULL;
+    }
+
+    return screen;
+}
+
+void InitScreen(ScreenState initialScreen) {
+    // create screens
+    for (int i = 0; i < SCREEN_COUNT; ++i) {
+        screens[i] = CreateScreen(i);
+    }
+
+    // set initial screen
+    currentScreen = initialScreen;
+    nextScreen = SCREEN_NONE;
+    screens[currentScreen].init();
+}
+
+void SetNextScreen(ScreenState screen) {
+    screens[currentScreen].hasFinished = true;
+    nextScreen = screen;
+}
+
+bool ScreenShouldClose(void) {
+    return screens[currentScreen].hasFinished &&
+           nextScreen == SCREEN_NONE;
+}
+
+void UpdateScreen(void) {
+    float dt = GetFrameTime();
+
+    // update screen
+    screens[currentScreen].update(dt);
+
+    // render game
+    BeginDrawing();
+    ClearBackground(BLACK);
+    screens[currentScreen].render();
+    EndDrawing();
+
+    if (screens[currentScreen].hasFinished && nextScreen != SCREEN_NONE) {
+        // reset previous
+        screens[currentScreen].hasFinished = false;
+
+        // start new
+        currentScreen = nextScreen;
+        nextScreen = SCREEN_NONE;
+        screens[currentScreen].init();
+    }
+}
+
+void InitMenuScreen(void) {
+    TraceLog(LOG_DEBUG, "Init menu screen");
+}
+
+void UpdateMenuScreen(float dt) {
+    if (IsKeyPressed(KEY_ESCAPE)) {
+        SetNextScreen(SCREEN_NONE);
+    }
+    if (IsKeyPressed(KEY_ENTER)) {
+        SetNextScreen(SCREEN_GAME);
+    }
+}
+
+void RenderMenuScreen(void) {
+    DrawText("PONG", 100, 100, 120, WHITE);
+}
+
+void InitGameScreen(void) {
     debugMode = false;
     leftScore = 0;
     rightScore = 0;
@@ -171,7 +283,7 @@ void ResetGame(void) {
     ResetBall();
 }
 
-static void ResetBall(void) {
+void ResetBall(void) {
     hitCounter = 0;
     ball.speed = BALL_INITIAL_SPEED;
 
@@ -187,7 +299,10 @@ static void ResetBall(void) {
     }
 }
 
-static void GameLoop(void) {
+void UpdateGameScreen(float dt) {
+    if (IsKeyPressed(KEY_ESCAPE)) {
+        SetNextScreen(SCREEN_MENU);
+    }
     if (IsKeyPressed(KEY_D)) {
         debugMode = !debugMode;
     }
@@ -197,7 +312,6 @@ static void GameLoop(void) {
     rightPaddle.dir.y = input;
 
     // update paddles
-    float dt = GetFrameTime();
     rightPaddle.rect.y += rightPaddle.dir.y * rightPaddle.speed * dt;
 
     // ia paddle
@@ -208,10 +322,10 @@ static void GameLoop(void) {
 
     if (iaTimer > iaResponseTime) {
         if (leftPaddlePosDiff > 0.0f &&
-                leftPaddleY + leftPaddleFuturePos > iaTargetPos) {
+            leftPaddleY + leftPaddleFuturePos > iaTargetPos) {
             leftPaddle.rect.y = iaTargetPos - iaHitPos;
         } else if (leftPaddlePosDiff < 0.0f &&
-                leftPaddleY - leftPaddleFuturePos < iaTargetPos) {
+                   leftPaddleY - leftPaddleFuturePos < iaTargetPos) {
             leftPaddle.rect.y = iaTargetPos - iaHitPos;
         } else {
             leftPaddle.rect.y += leftPaddlePosDiff * leftPaddleFuturePos;
@@ -252,8 +366,9 @@ static void GameLoop(void) {
         }
 
         // speed up ball
-        ball.speed = BALL_INITIAL_SPEED + BALL_SPEED_INCREMENT * sqrtf(++hitCounter);
-        
+        ball.speed =
+            BALL_INITIAL_SPEED + BALL_SPEED_INCREMENT * sqrtf(++hitCounter);
+
         // reset timer for ia
         iaTimer = 0.0f;
     }
@@ -271,8 +386,7 @@ static void GameLoop(void) {
         ResetBall();
         ++rightScore;
         TraceLog(LOG_DEBUG, "Score: %dx%d", leftScore, rightScore);
-    }
-    else if (ball.rect.x > SCREEN_WIDTH) {
+    } else if (ball.rect.x > SCREEN_WIDTH) {
         ResetBall();
         ++leftScore;
         TraceLog(LOG_DEBUG, "Score: %dx%d", leftScore, rightScore);
@@ -281,13 +395,11 @@ static void GameLoop(void) {
     // Check game over
     if (leftScore > 9 || rightScore > 9) {
         TraceLog(LOG_DEBUG, "Game over");
-        ResetGame();
+        SetNextScreen(SCREEN_MENU);
     }
-
-    DrawGame();
 }
 
-static float KeyboardInput(void) {
+float KeyboardInput(void) {
     float input = 0.0f;
 
     if (IsKeyDown(KEY_UP)) {
@@ -300,9 +412,7 @@ static float KeyboardInput(void) {
     return input;
 }
 
-static void DrawGame(void) {
-    BeginDrawing();
-    ClearBackground(BLACK);
+void RenderGameScreen(void) {
 
     // draw borders
     DrawRectangle(0, 0, SCREEN_WIDTH, BORDER_WIDTH, COLOR_ENITIES);
@@ -314,7 +424,7 @@ static void DrawGame(void) {
     DrawRectangleRec(ball.rect, WHITE);
 
     // middle line
-    int xMiddle = (SCREEN_WIDTH - BALL_WIDTH)/2.0f;
+    int xMiddle = (SCREEN_WIDTH - BALL_WIDTH) / 2.0f;
     for (int y = 2 * BORDER_WIDTH; y < SCREEN_HEIGHT; y += 2 * BALL_HEIGHT) {
         DrawRectangle(xMiddle, y, BALL_WIDTH, BALL_HEIGHT, COLOR_ENITIES);
     }
@@ -326,15 +436,18 @@ static void DrawGame(void) {
     int leftTextSize = MeasureText(leftScoreText, fontSize);
     int rightTextSize = MeasureText(rightScoreText, fontSize);
 
-    DrawText(leftScoreText, 3.0f*SCREEN_WIDTH/8.0f - leftTextSize /2.0f, 50, fontSize, WHITE);
-    DrawText(rightScoreText, 5.0f*SCREEN_WIDTH/8.0f - rightTextSize/2.0f, 50, fontSize, WHITE);
+    DrawText(leftScoreText, 3.0f * SCREEN_WIDTH / 8.0f - leftTextSize / 2.0f,
+             50, fontSize, WHITE);
+    DrawText(rightScoreText, 5.0f * SCREEN_WIDTH / 8.0f - rightTextSize / 2.0f,
+             50, fontSize, WHITE);
 
     if (debugMode) {
         // bounce points
-        DrawRectangleV(bouncePoints[0], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
+        DrawRectangleV(bouncePoints[0], (Vector2){BALL_WIDTH, BALL_HEIGHT},
+                       GREEN);
         for (int i = 1; i <= bouncePointsCount && i < BOUNCE_POINTS_MAX; ++i) {
             DrawRectangleV(bouncePoints[i], (Vector2){BALL_WIDTH, BALL_HEIGHT},
-                    GREEN);
+                           GREEN);
             DrawLineV(bouncePoints[i - 1], bouncePoints[i], GREEN);
         }
 
@@ -343,11 +456,9 @@ static void DrawGame(void) {
         DrawLineEx(bottomSP, bottomEP, 2.0f, BLUE);
         DrawLineEx(leftSP, leftEP, 2.0f, BLUE);
     }
-
-    EndDrawing();
 }
 
-static bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel) {
+bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel) {
     Rectangle ballRectSwept = SweptRectangle(ball.rect, ballVel);
     CollisionData collData = {0};
 
@@ -375,7 +486,7 @@ static bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel) {
     return collData.hit;
 }
 
-static void CalculateBouncePoints(void) {
+void CalculateBouncePoints(void) {
     Vector2 curDir, hitPoint;
     bool hitTop, hitRight, hitBottom, hitLeft;
     float hitTime;
@@ -434,7 +545,7 @@ static void CalculateBouncePoints(void) {
     }
 }
 
-static bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir,
+bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir,
                              Vector2 lineStart, Vector2 lineEnd,
                              Vector2 *collPoint, float *collTime) {
     Vector2 a = rayOrigin, r = rayDir;
@@ -457,17 +568,17 @@ static bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir,
     return false;
 }
 
-static float Vector2CrossProduct(Vector2 v1, Vector2 v2) {
+float Vector2CrossProduct(Vector2 v1, Vector2 v2) {
     return v1.x * v2.y - v1.y * v2.x;
 }
 
-static bool AABBCheck(Rectangle rect1, Rectangle rect2) {
+bool AABBCheck(Rectangle rect1, Rectangle rect2) {
     return !(
         rect1.x + rect1.width < rect2.x || rect1.x > rect2.x + rect2.width ||
         rect1.y + rect1.height < rect2.y || rect1.y > rect2.y + rect2.height);
 }
 
-static Rectangle SweptRectangle(Rectangle rect, Vector2 vel) {
+Rectangle SweptRectangle(Rectangle rect, Vector2 vel) {
     Rectangle sweptRect = {
         .x = vel.x > 0.0f ? rect.x : rect.x + vel.x,
         .y = vel.y > 0.0f ? rect.y : rect.y + vel.y,
@@ -477,7 +588,7 @@ static Rectangle SweptRectangle(Rectangle rect, Vector2 vel) {
     return sweptRect;
 }
 
-static CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target) {
+CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target) {
     CollisionData data;
     Vector2 invEntry, entry, invExit, exit;
     float entryTime, exitTime;
