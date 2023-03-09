@@ -12,7 +12,9 @@
 #define SCREEN_HEIGHT 600
 
 #define COLOR_BG      BLACK
-#define COLOR_ENITIES WHITE
+#define COLOR_FG WHITE
+
+#define SCREEN_FADE_TIME 0.3f
 
 #define PADDLE_WIDTH      20
 #define PADDLE_HEIGHT     80
@@ -57,6 +59,7 @@ typedef struct CollisionData {
 
 static Screen screens[SCREEN_COUNT];
 static ScreenState currentScreen, nextScreen;
+static float screenFadeTimer;
 
 static bool debugMode;
 
@@ -172,6 +175,7 @@ void InitScreen(ScreenState initialScreen) {
     currentScreen = initialScreen;
     nextScreen = SCREEN_NONE;
     screens[currentScreen].init();
+    screenFadeTimer = 0.0f;
 }
 
 void SetNextScreen(ScreenState screen) {
@@ -184,10 +188,16 @@ bool ScreenShouldClose(void) {
 }
 
 void UpdateScreen(void) {
+    static bool isFading = false;
+
     float dt = GetFrameTime();
 
     // update screen
-    screens[currentScreen].update(dt);
+    if (!isFading) {
+        screens[currentScreen].update(dt);
+    } else {
+        screenFadeTimer += dt;
+    }
 
     // render game
     BeginDrawing();
@@ -196,8 +206,14 @@ void UpdateScreen(void) {
     EndDrawing();
 
     if (screens[currentScreen].hasFinished && nextScreen != SCREEN_NONE) {
+        isFading = true;
+    }
+
+    if (isFading && screenFadeTimer > SCREEN_FADE_TIME) {
         // reset previous
         screens[currentScreen].hasFinished = false;
+        isFading = false;
+        screenFadeTimer = 0.0f;
 
         // start new
         currentScreen = nextScreen;
@@ -217,7 +233,10 @@ void UpdateMenuScreen(float dt) {
     }
 }
 
-void RenderMenuScreen(void) { DrawText("PONG", 100, 100, 120, WHITE); }
+void RenderMenuScreen(void) {
+    DrawText("PONG", 100, 100, 120,
+             Fade(COLOR_FG, 1.0f - screenFadeTimer / SCREEN_FADE_TIME));
+}
 
 void InitGameScreen(void) {
     debugMode = false;
@@ -389,20 +408,22 @@ float KeyboardInput(void) {
 }
 
 void RenderGameScreen(void) {
+    static Color fadeColor;
+    fadeColor = Fade(COLOR_FG, 1.0f - screenFadeTimer / SCREEN_FADE_TIME);
 
     // draw borders
-    DrawRectangle(0, 0, SCREEN_WIDTH, BORDER_WIDTH, COLOR_ENITIES);
+    DrawRectangle(0, 0, SCREEN_WIDTH, BORDER_WIDTH, fadeColor);
     DrawRectangle(0, SCREEN_HEIGHT - BORDER_WIDTH, SCREEN_WIDTH, BORDER_WIDTH,
-                  COLOR_ENITIES);
+                  fadeColor);
 
-    DrawRectangleRec(leftPaddle.rect, WHITE);
-    DrawRectangleRec(rightPaddle.rect, WHITE);
-    DrawRectangleRec(ball.rect, WHITE);
+    DrawRectangleRec(leftPaddle.rect, fadeColor);
+    DrawRectangleRec(rightPaddle.rect, fadeColor);
+    DrawRectangleRec(ball.rect, fadeColor);
 
     // middle line
     int xMiddle = (SCREEN_WIDTH - BALL_WIDTH) / 2.0f;
     for (int y = 2 * BORDER_WIDTH; y < SCREEN_HEIGHT; y += 2 * BALL_HEIGHT) {
-        DrawRectangle(xMiddle, y, BALL_WIDTH, BALL_HEIGHT, COLOR_ENITIES);
+        DrawRectangle(xMiddle, y, BALL_WIDTH, BALL_HEIGHT, fadeColor);
     }
 
     // Draw score
@@ -413,9 +434,9 @@ void RenderGameScreen(void) {
     int rightTextSize = MeasureText(rightScoreText, fontSize);
 
     DrawText(leftScoreText, 3.0f * SCREEN_WIDTH / 8.0f - leftTextSize / 2.0f, 50,
-             fontSize, WHITE);
+             fontSize, fadeColor);
     DrawText(rightScoreText, 5.0f * SCREEN_WIDTH / 8.0f - rightTextSize / 2.0f, 50,
-             fontSize, WHITE);
+             fontSize, fadeColor);
 
     if (debugMode) {
         // bounce points
