@@ -26,15 +26,14 @@
 #define BALL_SPEED_INCREMENT 100
 
 #define BORDER_WIDTH 15
+#define LIMIT_TOP    BORDER_WIDTH
+#define LIMIT_RIGHT  (SCREEN_WIDTH - PADDLE_HOR_OFFSET)
+#define LIMIT_BOTTOM (SCREEN_HEIGHT - BORDER_WIDTH)
+#define LIMIT_LEFT   PADDLE_HOR_OFFSET
 
 #define BOUNCE_POINTS_MAX 20
 
-typedef enum {
-    SCREEN_NONE = 0,
-    SCREEN_MENU,
-    SCREEN_GAME,
-    SCREEN_COUNT
-} ScreenState;
+typedef enum { SCREEN_NONE = 0, SCREEN_MENU, SCREEN_GAME, SCREEN_COUNT } ScreenState;
 
 typedef struct Screen {
     void (*init)(void);
@@ -64,7 +63,6 @@ static bool debugMode;
 static int leftScore, rightScore;
 
 static Entity leftPaddle, rightPaddle, ball;
-static int topLimit, rightLimit, bottomLimit, leftLimit;
 static int hitCounter;
 
 static Vector2 bouncePoints[BOUNCE_POINTS_MAX];
@@ -182,8 +180,7 @@ void SetNextScreen(ScreenState screen) {
 }
 
 bool ScreenShouldClose(void) {
-    return screens[currentScreen].hasFinished &&
-           nextScreen == SCREEN_NONE;
+    return screens[currentScreen].hasFinished && nextScreen == SCREEN_NONE;
 }
 
 void UpdateScreen(void) {
@@ -209,9 +206,7 @@ void UpdateScreen(void) {
     }
 }
 
-void InitMenuScreen(void) {
-    TraceLog(LOG_DEBUG, "Init menu screen");
-}
+void InitMenuScreen(void) { TraceLog(LOG_DEBUG, "Init menu screen"); }
 
 void UpdateMenuScreen(float dt) {
     if (IsKeyPressed(KEY_ESCAPE)) {
@@ -222,9 +217,7 @@ void UpdateMenuScreen(float dt) {
     }
 }
 
-void RenderMenuScreen(void) {
-    DrawText("PONG", 100, 100, 120, WHITE);
-}
+void RenderMenuScreen(void) { DrawText("PONG", 100, 100, 120, WHITE); }
 
 void InitGameScreen(void) {
     debugMode = false;
@@ -232,48 +225,32 @@ void InitGameScreen(void) {
     rightScore = 0;
 
     // initialize globals
-    leftPaddle =
-        (Entity){.rect = (Rectangle){0, 0, PADDLE_WIDTH, PADDLE_HEIGHT},
-                 .dir = (Vector2){0},
-                 .speed = PADDLE_IA_SPEED};
+    leftPaddle = (Entity){.rect = (Rectangle){0, 0, PADDLE_WIDTH, PADDLE_HEIGHT},
+                          .dir = (Vector2){0},
+                          .speed = PADDLE_IA_SPEED};
     rightPaddle = leftPaddle;
     ball = (Entity){.rect = (Rectangle){0, 0, BALL_WIDTH, BALL_HEIGHT},
                     .dir = (Vector2){0},
                     .speed = BALL_INITIAL_SPEED};
 
-    // limits
-    topLimit = BORDER_WIDTH;
-    rightLimit = SCREEN_WIDTH - PADDLE_HOR_OFFSET;
-    bottomLimit = SCREEN_HEIGHT - BORDER_WIDTH;
-    leftLimit = PADDLE_HOR_OFFSET;
-
     // reset paddle positions
     leftPaddle.rect.x = PADDLE_HOR_OFFSET;
     leftPaddle.rect.y = (SCREEN_HEIGHT - leftPaddle.rect.height) / 2.0f;
-    rightPaddle.rect.x =
-        SCREEN_WIDTH - PADDLE_HOR_OFFSET - rightPaddle.rect.width;
+    rightPaddle.rect.x = SCREEN_WIDTH - PADDLE_HOR_OFFSET - rightPaddle.rect.width;
     rightPaddle.rect.y = leftPaddle.rect.y;
     rightPaddle.speed = PADDLE_SPEED;
 
     // IA
-    topSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH, BORDER_WIDTH};
-    topEP =
-        (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
-                  BORDER_WIDTH};
-    rightSP =
-        (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
-                  BORDER_WIDTH};
+    topSP = (Vector2){LIMIT_LEFT + PADDLE_WIDTH, LIMIT_TOP};
+    topEP = (Vector2){LIMIT_RIGHT - PADDLE_WIDTH - BALL_WIDTH, LIMIT_TOP};
+    rightSP = (Vector2){LIMIT_RIGHT - PADDLE_WIDTH - BALL_WIDTH, LIMIT_TOP};
     rightEP =
-        (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
-                  SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
-    bottomSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH,
-                         SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
+        (Vector2){LIMIT_RIGHT - PADDLE_WIDTH - BALL_WIDTH, LIMIT_BOTTOM - BALL_HEIGHT};
+    bottomSP = (Vector2){LIMIT_LEFT + PADDLE_WIDTH, LIMIT_BOTTOM - BALL_HEIGHT};
     bottomEP =
-        (Vector2){SCREEN_WIDTH - PADDLE_HOR_OFFSET - PADDLE_WIDTH - BALL_WIDTH,
-                  SCREEN_HEIGHT - BORDER_WIDTH - BALL_HEIGHT};
-    leftSP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH, BORDER_WIDTH};
-    leftEP = (Vector2){PADDLE_HOR_OFFSET + PADDLE_WIDTH,
-                       SCREEN_HEIGHT - BORDER_WIDTH};
+        (Vector2){LIMIT_RIGHT - PADDLE_WIDTH - BALL_WIDTH, LIMIT_BOTTOM - BALL_HEIGHT};
+    leftSP = (Vector2){LIMIT_LEFT + PADDLE_WIDTH, LIMIT_TOP};
+    leftEP = (Vector2){LIMIT_LEFT + PADDLE_WIDTH, LIMIT_BOTTOM};
 
     iaTargetPos = leftPaddle.rect.y;
     iaHitPos = PADDLE_HEIGHT / 2.0f;
@@ -333,15 +310,15 @@ void UpdateGameScreen(float dt) {
     }
 
     // keep paddles on screen
-    if (rightPaddle.rect.y < topLimit) {
-        rightPaddle.rect.y = topLimit;
-    } else if (rightPaddle.rect.y + rightPaddle.rect.height > bottomLimit) {
-        rightPaddle.rect.y = bottomLimit - rightPaddle.rect.height;
+    if (rightPaddle.rect.y < LIMIT_TOP) {
+        rightPaddle.rect.y = LIMIT_TOP;
+    } else if (rightPaddle.rect.y + rightPaddle.rect.height > LIMIT_BOTTOM) {
+        rightPaddle.rect.y = LIMIT_BOTTOM - rightPaddle.rect.height;
     }
-    if (leftPaddle.rect.y < topLimit) {
-        leftPaddle.rect.y = topLimit;
-    } else if (leftPaddle.rect.y + leftPaddle.rect.height > bottomLimit) {
-        leftPaddle.rect.y = bottomLimit - leftPaddle.rect.height;
+    if (leftPaddle.rect.y < LIMIT_TOP) {
+        leftPaddle.rect.y = LIMIT_TOP;
+    } else if (leftPaddle.rect.y + leftPaddle.rect.height > LIMIT_BOTTOM) {
+        leftPaddle.rect.y = LIMIT_BOTTOM - leftPaddle.rect.height;
     }
 
     // update ball
@@ -366,19 +343,18 @@ void UpdateGameScreen(float dt) {
         }
 
         // speed up ball
-        ball.speed =
-            BALL_INITIAL_SPEED + BALL_SPEED_INCREMENT * sqrtf(++hitCounter);
+        ball.speed = BALL_INITIAL_SPEED + BALL_SPEED_INCREMENT * sqrtf(++hitCounter);
 
         // reset timer for ia
         iaTimer = 0.0f;
     }
 
     // reflect ball screen border
-    if (ball.rect.y < topLimit) {
-        ball.rect.y = topLimit;
+    if (ball.rect.y < LIMIT_TOP) {
+        ball.rect.y = LIMIT_TOP;
         ball.dir.y *= -1.0f;
-    } else if (ball.rect.y + ball.rect.height > bottomLimit) {
-        ball.rect.y = bottomLimit - ball.rect.height;
+    } else if (ball.rect.y + ball.rect.height > LIMIT_BOTTOM) {
+        ball.rect.y = LIMIT_BOTTOM - ball.rect.height;
         ball.dir.y *= -1.0f;
     }
 
@@ -436,18 +412,16 @@ void RenderGameScreen(void) {
     int leftTextSize = MeasureText(leftScoreText, fontSize);
     int rightTextSize = MeasureText(rightScoreText, fontSize);
 
-    DrawText(leftScoreText, 3.0f * SCREEN_WIDTH / 8.0f - leftTextSize / 2.0f,
-             50, fontSize, WHITE);
-    DrawText(rightScoreText, 5.0f * SCREEN_WIDTH / 8.0f - rightTextSize / 2.0f,
-             50, fontSize, WHITE);
+    DrawText(leftScoreText, 3.0f * SCREEN_WIDTH / 8.0f - leftTextSize / 2.0f, 50,
+             fontSize, WHITE);
+    DrawText(rightScoreText, 5.0f * SCREEN_WIDTH / 8.0f - rightTextSize / 2.0f, 50,
+             fontSize, WHITE);
 
     if (debugMode) {
         // bounce points
-        DrawRectangleV(bouncePoints[0], (Vector2){BALL_WIDTH, BALL_HEIGHT},
-                       GREEN);
+        DrawRectangleV(bouncePoints[0], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
         for (int i = 1; i <= bouncePointsCount && i < BOUNCE_POINTS_MAX; ++i) {
-            DrawRectangleV(bouncePoints[i], (Vector2){BALL_WIDTH, BALL_HEIGHT},
-                           GREEN);
+            DrawRectangleV(bouncePoints[i], (Vector2){BALL_WIDTH, BALL_HEIGHT}, GREEN);
             DrawLineV(bouncePoints[i - 1], bouncePoints[i], GREEN);
         }
 
@@ -474,10 +448,9 @@ bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel) {
             } else {
                 // collided from the front
                 ball.dir.x *= -1.0f;
-                ball.dir.y =
-                    (2 * (ball.rect.y - paddle.rect.y + ball.rect.height) /
-                     (PADDLE_HEIGHT + ball.rect.height)) -
-                    1.0f;
+                ball.dir.y = (2 * (ball.rect.y - paddle.rect.y + ball.rect.height) /
+                              (PADDLE_HEIGHT + ball.rect.height)) -
+                             1.0f;
                 ball.dir = Vector2Normalize(ball.dir);
             }
         }
@@ -499,8 +472,8 @@ void CalculateBouncePoints(void) {
     while (bouncePointsCount < BOUNCE_POINTS_MAX) {
         // check top bounce
         if (curDir.y < 0.0f) {
-            hitTop = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
-                                      topSP, topEP, &hitPoint, &hitTime);
+            hitTop = RayIntersectLine(bouncePoints[bouncePointsCount], curDir, topSP,
+                                      topEP, &hitPoint, &hitTime);
             if (hitTop) {
                 curDir = Vector2Reflect(curDir, (Vector2){0.0f, 1.0f});
                 bouncePoints[++bouncePointsCount] = hitPoint;
@@ -520,9 +493,8 @@ void CalculateBouncePoints(void) {
 
         // check bottom bounce
         if (curDir.y > 0.0f) {
-            hitBottom =
-                RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
-                                 bottomSP, bottomEP, &hitPoint, &hitTime);
+            hitBottom = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
+                                         bottomSP, bottomEP, &hitPoint, &hitTime);
             if (hitBottom) {
                 curDir = Vector2Reflect(curDir, (Vector2){0.0f, -1.0f});
                 bouncePoints[++bouncePointsCount] = hitPoint;
@@ -531,8 +503,8 @@ void CalculateBouncePoints(void) {
         }
 
         if (curDir.x < 0.0f) {
-            hitLeft = RayIntersectLine(bouncePoints[bouncePointsCount], curDir,
-                                       leftSP, leftEP, &hitPoint, &hitTime);
+            hitLeft = RayIntersectLine(bouncePoints[bouncePointsCount], curDir, leftSP,
+                                       leftEP, &hitPoint, &hitTime);
             if (hitLeft) {
                 curDir = Vector2Reflect(curDir, (Vector2){1.0f, 0.0f});
                 bouncePoints[++bouncePointsCount] = hitPoint;
@@ -545,9 +517,8 @@ void CalculateBouncePoints(void) {
     }
 }
 
-bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir,
-                             Vector2 lineStart, Vector2 lineEnd,
-                             Vector2 *collPoint, float *collTime) {
+bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir, Vector2 lineStart,
+                      Vector2 lineEnd, Vector2 *collPoint, float *collTime) {
     Vector2 a = rayOrigin, r = rayDir;
     Vector2 c = lineStart, s = Vector2Subtract(lineEnd, lineStart);
 
@@ -568,14 +539,11 @@ bool RayIntersectLine(Vector2 rayOrigin, Vector2 rayDir,
     return false;
 }
 
-float Vector2CrossProduct(Vector2 v1, Vector2 v2) {
-    return v1.x * v2.y - v1.y * v2.x;
-}
+float Vector2CrossProduct(Vector2 v1, Vector2 v2) { return v1.x * v2.y - v1.y * v2.x; }
 
 bool AABBCheck(Rectangle rect1, Rectangle rect2) {
-    return !(
-        rect1.x + rect1.width < rect2.x || rect1.x > rect2.x + rect2.width ||
-        rect1.y + rect1.height < rect2.y || rect1.y > rect2.y + rect2.height);
+    return !(rect1.x + rect1.width < rect2.x || rect1.x > rect2.x + rect2.width ||
+             rect1.y + rect1.height < rect2.y || rect1.y > rect2.y + rect2.height);
 }
 
 Rectangle SweptRectangle(Rectangle rect, Vector2 vel) {
@@ -634,8 +602,8 @@ CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target) {
     entryTime = fmaxf(entry.x, entry.y);
     exitTime = fminf(exit.x, exit.y);
 
-    if (entryTime > exitTime || (entry.x < 0.0f && entry.y < 0.0f) ||
-        entry.x > 1.0f || entry.y > 1.0f) {
+    if (entryTime > exitTime || (entry.x < 0.0f && entry.y < 0.0f) || entry.x > 1.0f ||
+        entry.y > 1.0f) {
         // no collision
         return data;
     }

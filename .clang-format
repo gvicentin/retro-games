@@ -19,6 +19,10 @@ TabWidth: 4
 # The number of columns to use for indentation.
 IndentWidth: 4
 
+# ColumnLimit (unsigned)
+# Number of columns to start breaking lines. Set it to 0 to disable.
+ColumnLimit: 88
+
 # UseTab (UseTabStyle)
 # The way to use tab characters in the resulting file.
 # Possible values:
