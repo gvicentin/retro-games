@@ -11,12 +11,12 @@
 #define SCREEN_WIDTH  800
 #define SCREEN_HEIGHT 600
 
-#define COLOR_BG      BLACK
+#define COLOR_BG BLACK
 #define COLOR_FG WHITE
 
 #define SCREEN_FADE_TIME 0.3f
 
-#define PADDLE_WIDTH      20
+#define PADDLE_WIDTH      15
 #define PADDLE_HEIGHT     80
 #define PADDLE_SPEED      600
 #define PADDLE_IA_SPEED   400
@@ -61,6 +61,7 @@ static Screen screens[SCREEN_COUNT];
 static ScreenState currentScreen, nextScreen;
 static float screenFadeTimer;
 
+static int menuSelection;
 static bool debugMode;
 
 static int leftScore, rightScore;
@@ -77,9 +78,9 @@ static float iaTargetPos, iaHitPos, iaResponseTime, iaTimer;
 static Vector2 topSP, rightSP, bottomSP, leftSP;
 static Vector2 topEP, rightEP, bottomEP, leftEP;
 
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
 // Module declaration
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
 // Screen management
 void InitScreen(ScreenState initialScreen);
 void SetNextScreen(ScreenState state);
@@ -108,9 +109,9 @@ bool AABBCheck(Rectangle rect1, Rectangle rect2);
 Rectangle SweptRectangle(Rectangle rect, Vector2 vel);
 CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target);
 
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
 // Entrypoint
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
 int main(void) {
     // pre configuration
     SetTraceLogLevel(LOG_DEBUG);
@@ -138,9 +139,9 @@ int main(void) {
     return 0;
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
 // Module implementation
-// -----------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
 Screen CreateScreen(ScreenState screenState) {
     Screen screen;
     screen.hasFinished = false;
@@ -205,7 +206,7 @@ void UpdateScreen(void) {
     screens[currentScreen].render();
     EndDrawing();
 
-    if (screens[currentScreen].hasFinished && nextScreen != SCREEN_NONE) {
+    if (screens[currentScreen].hasFinished) {
         isFading = true;
     }
 
@@ -222,7 +223,10 @@ void UpdateScreen(void) {
     }
 }
 
-void InitMenuScreen(void) { TraceLog(LOG_DEBUG, "Init menu screen"); }
+void InitMenuScreen(void) {
+    menuSelection = 0;
+    TraceLog(LOG_DEBUG, "Init menu screen");
+}
 
 void UpdateMenuScreen(float dt) {
     if (IsKeyPressed(KEY_ESCAPE)) {
@@ -231,11 +235,30 @@ void UpdateMenuScreen(float dt) {
     if (IsKeyPressed(KEY_ENTER)) {
         SetNextScreen(SCREEN_GAME);
     }
+    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W)) {
+        menuSelection = menuSelection == 0 ? 1 : menuSelection - 1; 
+    }
+    if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) {
+        menuSelection = (menuSelection + 1) % 2;
+    }
 }
 
 void RenderMenuScreen(void) {
-    DrawText("PONG", 100, 100, 120,
-             Fade(COLOR_FG, 1.0f - screenFadeTimer / SCREEN_FADE_TIME));
+    static Color fadeColor;
+    fadeColor = Fade(COLOR_FG, 1.0f - screenFadeTimer / SCREEN_FADE_TIME);
+
+    int titleMeasure = MeasureText("PONG", 150);
+    DrawText("PONG", (SCREEN_WIDTH - titleMeasure) / 2.0f, 150, 150, fadeColor);
+
+    int singlePlayerSize = menuSelection == 0 ? 32 : 24;
+    int singlePlayerMeasure = MeasureText("ONE PLAYER", singlePlayerSize);
+    DrawText("ONE PLAYER", (SCREEN_WIDTH - singlePlayerMeasure) / 2.0f,
+             400 - singlePlayerSize / 2.0f, singlePlayerSize, fadeColor);
+
+    int multiPlayerSize = menuSelection == 1 ? 32 : 24;
+    int multiPlayerMeasure = MeasureText("TWO PLAYERS", multiPlayerSize);
+    DrawText("TWO PLAYERS", (SCREEN_WIDTH - multiPlayerMeasure) / 2.0f,
+             440 - multiPlayerSize / 2.0f, multiPlayerSize, fadeColor);
 }
 
 void InitGameScreen(void) {
