@@ -35,7 +35,26 @@
 
 #define BOUNCE_POINTS_MAX 20
 
-typedef enum { SCREEN_NONE = 0, SCREEN_MENU, SCREEN_GAME, SCREEN_COUNT } ScreenState;
+typedef enum {
+    SCREEN_NONE = 0,
+    SCREEN_MENU,
+    SCREEN_GAME,
+    SCREEN_COUNT
+} ScreenState;
+
+typedef enum {
+    MENU_ONE_PLAYER = 0,
+    MENU_TWO_PLAYERS,
+    MENU_COUNT
+} MenuOption;
+
+typedef enum {
+    MENU_SP_EASY = 0,
+    MENU_SP_MEDIUM,
+    MENU_SP_HARD,
+    MENU_SP_BACK,
+    MENU_SP_COUNT,
+} MenuSPOption;
 
 typedef struct Screen {
     void (*init)(void);
@@ -61,20 +80,17 @@ static Screen screens[SCREEN_COUNT];
 static ScreenState currentScreen, nextScreen;
 static float screenFadeTimer;
 
-static int menuSelection;
+static MenuOption menuOption;
+static MenuSPOption menuSPOption;
+static float menuBlinkTimer;
+
 static bool debugMode;
-
 static int leftScore, rightScore;
-
 static Entity leftPaddle, rightPaddle, ball;
 static int hitCounter;
-
 static Vector2 bouncePoints[BOUNCE_POINTS_MAX];
 static int bouncePointsCount;
-
 static float iaTargetPos, iaHitPos, iaResponseTime, iaTimer;
-
-// start and end line points
 static Vector2 topSP, rightSP, bottomSP, leftSP;
 static Vector2 topEP, rightEP, bottomEP, leftEP;
 
@@ -224,7 +240,9 @@ void UpdateScreen(void) {
 }
 
 void InitMenuScreen(void) {
-    menuSelection = 0;
+    menuOption = MENU_ONE_PLAYER;
+    menuSPOption = MENU_SP_EASY;
+    menuBlinkTimer = 0.0f;
     TraceLog(LOG_DEBUG, "Init menu screen");
 }
 
@@ -236,29 +254,42 @@ void UpdateMenuScreen(float dt) {
         SetNextScreen(SCREEN_GAME);
     }
     if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W)) {
-        menuSelection = menuSelection == 0 ? 1 : menuSelection - 1; 
+        menuOption = (menuOption == 0) ? MENU_COUNT - 1 : menuOption - 1;
     }
     if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) {
-        menuSelection = (menuSelection + 1) % 2;
+        menuOption = (menuOption == MENU_COUNT - 1) ? 0 : menuOption + 1;
     }
+
+    menuBlinkTimer += dt;
 }
 
 void RenderMenuScreen(void) {
     static Color fadeColor;
+    static bool blink = true;
+
+    if (menuBlinkTimer > 0.3f) {
+        menuBlinkTimer -= 0.3f;
+        blink = !blink;
+    }
+
     fadeColor = Fade(COLOR_FG, 1.0f - screenFadeTimer / SCREEN_FADE_TIME);
+    Color blinkColor = blink ? COLOR_FG : COLOR_BG;
+    Color singlePlayerColor = menuOption == MENU_ONE_PLAYER ? blinkColor : COLOR_FG;
+    Color multiPlayerColor = menuOption == MENU_TWO_PLAYERS ? blinkColor : COLOR_FG;
+    if (screens[currentScreen].hasFinished) {
+        singlePlayerColor = fadeColor;
+        multiPlayerColor = fadeColor;
+    }
 
     int titleMeasure = MeasureText("PONG", 150);
     DrawText("PONG", (SCREEN_WIDTH - titleMeasure) / 2.0f, 150, 150, fadeColor);
 
-    int singlePlayerSize = menuSelection == 0 ? 32 : 24;
-    int singlePlayerMeasure = MeasureText("ONE PLAYER", singlePlayerSize);
+    int singlePlayerMeasure = MeasureText("ONE PLAYER", 24);
     DrawText("ONE PLAYER", (SCREEN_WIDTH - singlePlayerMeasure) / 2.0f,
-             400 - singlePlayerSize / 2.0f, singlePlayerSize, fadeColor);
-
-    int multiPlayerSize = menuSelection == 1 ? 32 : 24;
-    int multiPlayerMeasure = MeasureText("TWO PLAYERS", multiPlayerSize);
+             400, 24, singlePlayerColor);
+    int multiPlayerMeasure = MeasureText("TWO PLAYERS", 24);
     DrawText("TWO PLAYERS", (SCREEN_WIDTH - multiPlayerMeasure) / 2.0f,
-             440 - multiPlayerSize / 2.0f, multiPlayerSize, fadeColor);
+             440, 24, multiPlayerColor);
 }
 
 void InitGameScreen(void) {

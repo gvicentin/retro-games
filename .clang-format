@@ -34,3 +34,7 @@ UseTab: Never
 # AlignConsecutiveMacros (boolean)
 # Align macro column when they are don't have any line between them.
 AlignConsecutiveMacros: true
+
+# AllowShortEnumsOnASingleLine (boolean)
+# Don't put enum in a single line if it fit. 
+AllowShortEnumsOnASingleLine: false
