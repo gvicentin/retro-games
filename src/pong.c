@@ -129,12 +129,18 @@ CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target);
 // Entrypoint
 // -------------------------------------------------------------------------------------
 int main(void) {
+
+#if defined(DEBUG)
     // pre configuration
     SetTraceLogLevel(LOG_DEBUG);
+#else
+    SetTraceLogLevel(LOG_NONE);
+#endif
 
     // initialization
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE);
     InitScreen(SCREEN_MENU);
+
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateScreen, 0, 1);
