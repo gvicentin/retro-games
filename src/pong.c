@@ -78,7 +78,7 @@ typedef struct CollisionData {
 
 static Screen screens[SCREEN_COUNT];
 static ScreenState currentScreen, nextScreen;
-static float screenFadeTimer;
+static float screenFade;
 
 static MenuOption menuOption;
 static MenuSPOption menuSPOption;
@@ -130,8 +130,8 @@ CollisionData SweptAABB(Rectangle rect, Vector2 vel, Rectangle target);
 // -------------------------------------------------------------------------------------
 int main(void) {
 
+// pre configuration
 #if defined(DEBUG)
-    // pre configuration
     SetTraceLogLevel(LOG_DEBUG);
 #else
     SetTraceLogLevel(LOG_NONE);
@@ -140,7 +140,6 @@ int main(void) {
     // initialization
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE);
     InitScreen(SCREEN_MENU);
-
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateScreen, 0, 1);
@@ -198,7 +197,7 @@ void InitScreen(ScreenState initialScreen) {
     currentScreen = initialScreen;
     nextScreen = SCREEN_NONE;
     screens[currentScreen].init();
-    screenFadeTimer = 0.0f;
+    screenFade = 0.0f;
 }
 
 void SetNextScreen(ScreenState screen) {
@@ -211,15 +210,17 @@ bool ScreenShouldClose(void) {
 }
 
 void UpdateScreen(void) {
-    static bool isFading = false;
+    static bool isFadingIn = true;
+    static bool isFadingOut = false;
+    static float fadingDir = 1.0f;
 
     float dt = GetFrameTime();
 
     // update screen
-    if (!isFading) {
+    if (!isFadingIn && !isFadingOut) {
         screens[currentScreen].update(dt);
     } else {
-        screenFadeTimer += dt;
+        screenFade += dt * fadingDir;
     }
 
     // render game
@@ -229,14 +230,22 @@ void UpdateScreen(void) {
     EndDrawing();
 
     if (screens[currentScreen].hasFinished) {
-        isFading = true;
+        isFadingOut = true;
     }
 
-    if (isFading && screenFadeTimer > SCREEN_FADE_TIME) {
+    if (isFadingIn && fabsf(screenFade) > SCREEN_FADE_TIME) {
+        isFadingIn = false;
+        screenFade = SCREEN_FADE_TIME;
+        fadingDir = -1.0f;
+    }
+
+    if (isFadingOut && fabsf(screenFade) > SCREEN_FADE_TIME) {
         // reset previous
         screens[currentScreen].hasFinished = false;
-        isFading = false;
-        screenFadeTimer = 0.0f;
+        isFadingOut = false;
+        isFadingIn = true;
+        screenFade = 0.0f;
+        fadingDir = 1.0f;
 
         // start new
         currentScreen = nextScreen;
@@ -278,11 +287,11 @@ void RenderMenuScreen(void) {
         blink = !blink;
     }
 
-    fadeColor = Fade(COLOR_FG, 1.0f - screenFadeTimer / SCREEN_FADE_TIME);
+    fadeColor = Fade(COLOR_FG, screenFade / SCREEN_FADE_TIME);
     Color blinkColor = blink ? COLOR_FG : COLOR_BG;
     Color singlePlayerColor = menuOption == MENU_ONE_PLAYER ? blinkColor : COLOR_FG;
     Color multiPlayerColor = menuOption == MENU_TWO_PLAYERS ? blinkColor : COLOR_FG;
-    if (screens[currentScreen].hasFinished) {
+    if (screenFade < SCREEN_FADE_TIME) {
         singlePlayerColor = fadeColor;
         multiPlayerColor = fadeColor;
     }
@@ -291,11 +300,11 @@ void RenderMenuScreen(void) {
     DrawText("PONG", (SCREEN_WIDTH - titleMeasure) / 2.0f, 150, 150, fadeColor);
 
     int singlePlayerMeasure = MeasureText("ONE PLAYER", 24);
-    DrawText("ONE PLAYER", (SCREEN_WIDTH - singlePlayerMeasure) / 2.0f,
-             400, 24, singlePlayerColor);
+    DrawText("ONE PLAYER", (SCREEN_WIDTH - singlePlayerMeasure) / 2.0f, 400, 24,
+             singlePlayerColor);
     int multiPlayerMeasure = MeasureText("TWO PLAYERS", 24);
-    DrawText("TWO PLAYERS", (SCREEN_WIDTH - multiPlayerMeasure) / 2.0f,
-             440, 24, multiPlayerColor);
+    DrawText("TWO PLAYERS", (SCREEN_WIDTH - multiPlayerMeasure) / 2.0f, 440, 24,
+             multiPlayerColor);
 }
 
 void InitGameScreen(void) {
@@ -469,7 +478,7 @@ float KeyboardInput(void) {
 
 void RenderGameScreen(void) {
     static Color fadeColor;
-    fadeColor = Fade(COLOR_FG, 1.0f - screenFadeTimer / SCREEN_FADE_TIME);
+    fadeColor = Fade(COLOR_FG, screenFade / SCREEN_FADE_TIME);
 
     // draw borders
     DrawRectangle(0, 0, SCREEN_WIDTH, BORDER_WIDTH, fadeColor);
