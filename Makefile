@@ -24,7 +24,7 @@ clean:
 
 %.bin: $(SRCS_DIR)/%.c
 	$(CC) $(CFLAGS) -DDEBUG $< -I$(RAYLIB_DIR) -I$(RAYLIB_SUBMODULES_DIR) \
-		-L$(RAYLIB_DIR) $(LIBS) -Wl,-rpath=$(RAYLIB_DIR) -o $(BUILD_DIR)/$@
+		-L$(RAYLIB_DIR) $(LIBS) -Wl,-rpath=$(RAYLIB_DIR) -o $(BUILD_DIR)/$(basename $@)
 
 # Create the build directory
 $(BUILD_DIR):
