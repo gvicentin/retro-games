@@ -23,10 +23,8 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 %.bin: $(SRCS_DIR)/%.c
-	$(CC) $(CFLAGS) -DDEBUG \
-		-I$(RAYLIB_DIR) -I$(RAYLIB_SUBMODULES_DIR) \
-		-L$(RAYLIB_DIR) $(LIBS) -Wl,-rpath=$(RAYLIB_DIR) \
-		$< -o $(BUILD_DIR)/$@
+	$(CC) $(CFLAGS) -DDEBUG $< -I$(RAYLIB_DIR) -I$(RAYLIB_SUBMODULES_DIR) \
+		-L$(RAYLIB_DIR) $(LIBS) -Wl,-rpath=$(RAYLIB_DIR) -o $(BUILD_DIR)/$@
 
 # Create the build directory
 $(BUILD_DIR):
