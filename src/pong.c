@@ -7,34 +7,42 @@
 #include <emscripten/emscripten.h>
 #endif
 
+// Screen constants
 #define SCREEN_TITLE  "Pong"
 #define SCREEN_WIDTH  800
 #define SCREEN_HEIGHT 600
+#define SCREEN_FADE_TIME 0.3f
 
+// Colors
 #define COLOR_BG BLACK
 #define COLOR_FG WHITE
 
-#define SCREEN_FADE_TIME 0.3f
-
+// Dimensions
 #define PADDLE_WIDTH      15
 #define PADDLE_HEIGHT     80
 #define PADDLE_SPEED      600
 #define PADDLE_IA_SPEED   400
 #define PADDLE_HOR_OFFSET 30
 
+// Ball constants
 #define BALL_WIDTH           15
 #define BALL_HEIGHT          15
 #define BALL_INITIAL_SPEED   400
 #define BALL_SPEED_INCREMENT 100
 
+// Limits for paddles and ball
 #define BORDER_WIDTH 15
 #define LIMIT_TOP    BORDER_WIDTH
 #define LIMIT_RIGHT  (SCREEN_WIDTH - PADDLE_HOR_OFFSET)
 #define LIMIT_BOTTOM (SCREEN_HEIGHT - BORDER_WIDTH)
 #define LIMIT_LEFT   PADDLE_HOR_OFFSET
 
+// How many bouncing points can predict 
 #define BOUNCE_POINTS_MAX 20
 
+// -------------------------------------------------------------------------------------
+// Enumerations
+// -------------------------------------------------------------------------------------
 typedef enum {
     SCREEN_NONE = 0,
     SCREEN_MENU,
@@ -56,6 +64,9 @@ typedef enum {
     MENU_SP_COUNT,
 } MenuSPOption;
 
+// -------------------------------------------------------------------------------------
+// Structs
+// -------------------------------------------------------------------------------------
 typedef struct Screen {
     void (*init)(void);
     void (*update)(float dt);
@@ -76,14 +87,23 @@ typedef struct CollisionData {
     Vector2 contactNormal; // surface normal where collide
 } CollisionData;
 
+// -------------------------------------------------------------------------------------
+// Globals
+// -------------------------------------------------------------------------------------
+// Assets
+static Sound soundBeep;
+
+// Screens
 static Screen screens[SCREEN_COUNT];
 static ScreenState currentScreen, nextScreen;
 static float screenFade;
 
+// Menu screen
 static MenuOption menuOption;
 static MenuSPOption menuSPOption;
 static float menuBlinkTimer;
 
+// Main game screen
 static bool debugMode;
 static int leftScore, rightScore;
 static Entity leftPaddle, rightPaddle, ball;
@@ -140,6 +160,10 @@ int main(void) {
     // initialization
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE);
     InitScreen(SCREEN_MENU);
+    InitAudioDevice();
+
+    // load assets
+    soundBeep = LoadSound("assets/sound.wav");
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateScreen, 0, 1);
@@ -154,7 +178,11 @@ int main(void) {
     }
 #endif
 
+    // destroy assets
+    UnloadSound(soundBeep);
+
     // cleanup
+    CloseAudioDevice();
     CloseWindow();
 
     return 0;
@@ -435,6 +463,8 @@ void UpdateGameScreen(float dt) {
 
         // reset timer for ia
         iaTimer = 0.0f;
+
+        PlaySound(soundBeep);
     }
 
     // reflect ball screen border
