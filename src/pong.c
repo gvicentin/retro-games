@@ -7,6 +7,10 @@
 #include <emscripten/emscripten.h>
 #endif
 
+#ifndef ASSET_PATH
+#define ASSET_PATH "./assets"
+#endif 
+
 // Screen constants
 #define SCREEN_TITLE     "Pong"
 #define SCREEN_WIDTH     800
@@ -147,6 +151,8 @@ void UpdateGameOverScreen(float dt);
 void RenderGameOverScreen(void);
 
 // Helper functions
+void InitAssets(void);
+void DestroyAssets(void);
 void ResetBall(void);
 float KeyboardInput(void);
 void RenderMenuOptions(const char **options, int numOptions, int currentOption,
@@ -178,9 +184,7 @@ int main(void) {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE);
     InitScreen(SCREEN_MENU);
     InitAudioDevice();
-
-    // load assets
-    soundBeep = LoadSound("assets/sound.wav");
+    InitAssets();
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateScreen, 0, 1);
@@ -195,10 +199,8 @@ int main(void) {
     }
 #endif
 
-    // destroy assets
-    UnloadSound(soundBeep);
-
     // cleanup
+    DestroyAssets();
     CloseAudioDevice();
     CloseWindow();
 
@@ -620,6 +622,14 @@ void RenderMenuOptions(const char **options, int numOptions, int currentOption,
     }
 }
 
+void InitAssets(void) {
+    ChangeDirectory(ASSET_PATH);
+    soundBeep = LoadSound("sound.wav");
+}
+
+void DestroyAssets(void) {
+    UnloadSound(soundBeep);
+}
 
 bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel) {
     Rectangle ballRectSwept = SweptRectangle(ball.rect, ballVel);
