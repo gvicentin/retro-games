@@ -1,6 +1,6 @@
 # Compiler and compiler flags
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -std=c99
+CFLAGS = -Wall -Wextra -Werror -std=c99 -g
 
 # Directories for raylib and its submodules
 RAYLIB_DIR = raylib/src

@@ -8,9 +8,9 @@
 #endif
 
 // Screen constants
-#define SCREEN_TITLE  "Pong"
-#define SCREEN_WIDTH  800
-#define SCREEN_HEIGHT 600
+#define SCREEN_TITLE     "Pong"
+#define SCREEN_WIDTH     800
+#define SCREEN_HEIGHT    600
 #define SCREEN_FADE_TIME 0.3f
 
 // Colors
@@ -37,7 +37,7 @@
 #define LIMIT_BOTTOM (SCREEN_HEIGHT - BORDER_WIDTH)
 #define LIMIT_LEFT   PADDLE_HOR_OFFSET
 
-// How many bouncing points can predict 
+// How many bouncing points can predict
 #define BOUNCE_POINTS_MAX 20
 
 // -------------------------------------------------------------------------------------
@@ -47,6 +47,7 @@ typedef enum {
     SCREEN_NONE = 0,
     SCREEN_MENU,
     SCREEN_GAME,
+    SCREEN_GAME_OVER,
     SCREEN_COUNT
 } ScreenState;
 
@@ -63,6 +64,12 @@ typedef enum {
     MENU_SP_BACK,
     MENU_SP_COUNT,
 } MenuSPOption;
+
+typedef enum {
+    MENU_GO_PLAY = 0,
+    MENU_GO_BACK,
+    MENU_GO_COUNT
+} MenuGameOver;
 
 // -------------------------------------------------------------------------------------
 // Structs
@@ -98,9 +105,10 @@ static Screen screens[SCREEN_COUNT];
 static ScreenState currentScreen, nextScreen;
 static float screenFade;
 
-// Menu screen
+// Menu screens
 static MenuOption menuOption;
 static MenuSPOption menuSPOption;
+static MenuGameOver menuGOverOption;
 static float menuBlinkTimer;
 
 // Main game screen
@@ -132,8 +140,17 @@ void RenderMenuScreen(void);
 void InitGameScreen(void);
 void UpdateGameScreen(float dt);
 void RenderGameScreen(void);
+
+// Game over screen
+void InitGameOverScreen(void);
+void UpdateGameOverScreen(float dt);
+void RenderGameOverScreen(void);
+
+// Helper functions
 void ResetBall(void);
 float KeyboardInput(void);
+void RenderMenuOptions(const char **options, int numOptions, int currentOption,
+                       Color fadeColor);
 
 // Collision detection
 bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel);
@@ -205,6 +222,11 @@ Screen CreateScreen(ScreenState screenState) {
         screen.init = &InitGameScreen;
         screen.update = &UpdateGameScreen;
         screen.render = &RenderGameScreen;
+        break;
+    case SCREEN_GAME_OVER:
+        screen.init = &InitGameOverScreen;
+        screen.update = &UpdateGameOverScreen;
+        screen.render = &RenderGameOverScreen;
         break;
     default:
         screen.init = NULL;
@@ -307,32 +329,13 @@ void UpdateMenuScreen(float dt) {
 }
 
 void RenderMenuScreen(void) {
-    static Color fadeColor;
-    static bool blink = true;
-
-    if (menuBlinkTimer > 0.3f) {
-        menuBlinkTimer -= 0.3f;
-        blink = !blink;
-    }
-
-    fadeColor = Fade(COLOR_FG, screenFade / SCREEN_FADE_TIME);
-    Color blinkColor = blink ? COLOR_FG : COLOR_BG;
-    Color singlePlayerColor = menuOption == MENU_ONE_PLAYER ? blinkColor : COLOR_FG;
-    Color multiPlayerColor = menuOption == MENU_TWO_PLAYERS ? blinkColor : COLOR_FG;
-    if (screenFade < SCREEN_FADE_TIME) {
-        singlePlayerColor = fadeColor;
-        multiPlayerColor = fadeColor;
-    }
+    Color fadeColor = Fade(COLOR_FG, screenFade / SCREEN_FADE_TIME);
 
     int titleMeasure = MeasureText("PONG", 150);
     DrawText("PONG", (SCREEN_WIDTH - titleMeasure) / 2.0f, 150, 150, fadeColor);
 
-    int singlePlayerMeasure = MeasureText("ONE PLAYER", 24);
-    DrawText("ONE PLAYER", (SCREEN_WIDTH - singlePlayerMeasure) / 2.0f, 400, 24,
-             singlePlayerColor);
-    int multiPlayerMeasure = MeasureText("TWO PLAYERS", 24);
-    DrawText("TWO PLAYERS", (SCREEN_WIDTH - multiPlayerMeasure) / 2.0f, 440, 24,
-             multiPlayerColor);
+    const char *options[] = {"ONE PLAYER", "TWO PLAYERS"};
+    RenderMenuOptions(options, sizeof(options) / sizeof(const char *), menuOption, fadeColor);
 }
 
 void InitGameScreen(void) {
@@ -374,22 +377,6 @@ void InitGameScreen(void) {
     iaTimer = 0.0f;
 
     ResetBall();
-}
-
-void ResetBall(void) {
-    hitCounter = 0;
-    ball.speed = BALL_INITIAL_SPEED;
-
-    ball.rect.x = (SCREEN_WIDTH - ball.rect.width) / 2.0f;
-    ball.rect.y = (SCREEN_HEIGHT - ball.rect.height) / 2.0f;
-    ball.dir.x = GetRandomValue(0, 1) == 0 ? -1.0f : 1.0f;
-    ball.dir.y = GetRandomValue(0, 1000) / 1000.0f;
-    ball.dir = Vector2Normalize(ball.dir);
-
-    if (ball.dir.x < 0.0f) {
-        CalculateBouncePoints();
-        iaTargetPos = bouncePoints[bouncePointsCount].y;
-    }
 }
 
 void UpdateGameScreen(float dt) {
@@ -489,21 +476,8 @@ void UpdateGameScreen(float dt) {
     // Check game over
     if (leftScore > 9 || rightScore > 9) {
         TraceLog(LOG_DEBUG, "Game over");
-        SetNextScreen(SCREEN_MENU);
+        SetNextScreen(SCREEN_GAME_OVER);
     }
-}
-
-float KeyboardInput(void) {
-    float input = 0.0f;
-
-    if (IsKeyDown(KEY_UP)) {
-        input -= 1.0f;
-    }
-    if (IsKeyDown(KEY_DOWN)) {
-        input += 1.0f;
-    }
-
-    return input;
 }
 
 void RenderGameScreen(void) {
@@ -551,6 +525,101 @@ void RenderGameScreen(void) {
         DrawLineEx(leftSP, leftEP, 2.0f, BLUE);
     }
 }
+
+void InitGameOverScreen(void) {
+    menuGOverOption = MENU_GO_PLAY;
+    menuBlinkTimer = 0.0f;
+    TraceLog(LOG_DEBUG, "Init Game Over screen");
+}
+
+void UpdateGameOverScreen(float dt) {
+    if (IsKeyPressed(KEY_ENTER)) {
+        SetNextScreen(SCREEN_MENU);
+    }
+    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W)) {
+        menuGOverOption =
+            (menuGOverOption == 0) ? MENU_GO_COUNT - 1 : menuGOverOption - 1;
+    }
+    if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) {
+        menuGOverOption =
+            (menuGOverOption == MENU_GO_COUNT - 1) ? 0 : menuGOverOption + 1;
+    }
+
+    menuBlinkTimer += dt;
+}
+
+void RenderGameOverScreen(void) {
+    Color fadeColor;
+
+    fadeColor = Fade(COLOR_FG, screenFade / SCREEN_FADE_TIME);
+
+    // draw header
+    const char *leftWin = "LEFT PLAYER WIN";
+    const char *rightWin = "RIGHT PLAYER WIN";
+    const char *winMsg = leftScore > rightScore ? leftWin : rightWin;
+    int titleMeasure = MeasureText(winMsg, 48);
+    DrawText(winMsg, (SCREEN_WIDTH - titleMeasure) / 2.0f, 150, 48, fadeColor);
+
+    // draw menu options
+    const char *options[] = {"PLAY AGAIN", "MAIN_MENU"};
+    RenderMenuOptions(options, 2, menuGOverOption, fadeColor);
+}
+
+void ResetBall(void) {
+    hitCounter = 0;
+    ball.speed = BALL_INITIAL_SPEED;
+
+    ball.rect.x = (SCREEN_WIDTH - ball.rect.width) / 2.0f;
+    ball.rect.y = (SCREEN_HEIGHT - ball.rect.height) / 2.0f;
+    ball.dir.x = GetRandomValue(0, 1) == 0 ? -1.0f : 1.0f;
+    ball.dir.y = GetRandomValue(0, 1000) / 1000.0f;
+    ball.dir = Vector2Normalize(ball.dir);
+
+    if (ball.dir.x < 0.0f) {
+        CalculateBouncePoints();
+        iaTargetPos = bouncePoints[bouncePointsCount].y;
+    }
+}
+
+float KeyboardInput(void) {
+    float input = 0.0f;
+
+    if (IsKeyDown(KEY_UP)) {
+        input -= 1.0f;
+    }
+    if (IsKeyDown(KEY_DOWN)) {
+        input += 1.0f;
+    }
+
+    return input;
+}
+
+void RenderMenuOptions(const char **options, int numOptions, int currentOption,
+                       Color fadeColor) {
+    static bool blink = true;
+
+    int yPos = 400;
+
+    if (menuBlinkTimer > 0.3f) {
+        menuBlinkTimer -= 0.3f;
+        blink = !blink;
+    }
+
+    for (int i = 0; i < numOptions; ++i) {
+        Color blinkColor = blink ? COLOR_FG : COLOR_BG;
+        Color finalColor = currentOption == i ? blinkColor : COLOR_FG;
+        if (screenFade < SCREEN_FADE_TIME) {
+            // override fading color
+            finalColor = fadeColor;
+        }
+
+        int optionMeasure = MeasureText(options[i], 24);
+        DrawText(options[i], (SCREEN_WIDTH - optionMeasure) / 2.0f, yPos, 24,
+                 finalColor);
+        yPos += 40;
+    }
+}
+
 
 bool ResolveCollBallPaddle(Entity paddle, Vector2 ballVel) {
     Rectangle ballRectSwept = SweptRectangle(ball.rect, ballVel);
