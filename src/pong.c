@@ -101,13 +101,13 @@ typedef struct CollisionData {
 // -------------------------------------------------------------------------------------
 // Globals
 // -------------------------------------------------------------------------------------
-// Assets
-static Sound soundBeep;
-
 // Screens
 static Screen screens[SCREEN_COUNT];
 static ScreenState currentScreen, nextScreen;
 static float screenFade;
+
+// Assets
+static Sound soundBeep;
 
 // Menu screens
 static MenuOption menuOption;
