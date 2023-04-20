@@ -1,6 +1,6 @@
 # Compiler and compiler flags
 CC 		= gcc
-CFLAGS 	= -Wall -Wextra -Werror -std=c99 -g
+CFLAGS 	= -Wall -Wextra -std=c99 -g
 
 # Directories for raylib and its submodules
 RAYLIB_DIR 				= raylib/src
@@ -13,7 +13,7 @@ LIBS = -lraylib -lm -ldl -lpthread
 ROOT_DIR	:= $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 SRCS_DIR 	= src
 BUILD_DIR 	= build
-BIN 		= pong.bin
+BIN 		= pong.bin snake.bin
 
 .PHONY: clean
 
