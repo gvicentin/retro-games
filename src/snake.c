@@ -22,7 +22,7 @@
 #define GRID_HEIGHT 20
 #define GRID_MARGIN 3
 
-#define MAX_PIECES 100
+#define SNAKE_BUFFER_SIZE 20
 
 // -------------------------------------------------------------------------------------
 // Enumerations
@@ -53,16 +53,6 @@ typedef struct Screen {
     bool hasFinished;
 } Screen;
 
-typedef struct {
-    Vector2 position;
-    Vector2 size;
-    Direction direction;
-
-    // turning point
-    Vector2 nextPoint;
-    Direction nextDir;
-} SnakePiece;
-
 // -------------------------------------------------------------------------------------
 // Globals
 // -------------------------------------------------------------------------------------
@@ -70,15 +60,15 @@ typedef struct {
 static Screen screens[SCREEN_COUNT];
 static ScreenState currentScreen, nextScreen;
 
-static const Vector2 m_dirVectors[] = {
+static const Vector2 dirVectors[] = {
     {0.0f, 0.0f}, {0.0f, -1.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {-1.0f, 0.0f}};
 
-SnakePiece m_soldiers[MAX_PIECES];
-int m_soldiersCount;
-float m_speed;
-float m_accum, m_frameDelay;
+static Vector2 snake[SNAKE_BUFFER_SIZE];
+static int snakeHead, snakeTail;
+static float snakeTimer, snakeSpeed;
+static Direction snakeDir;
 
-SnakePiece m_newSoldier;
+static Vector2 apple;
 
 // -------------------------------------------------------------------------------------
 // Module declaration
@@ -102,12 +92,9 @@ void RenderGameScreen(float fading);
 // Helper functions
 void InitAssets(void);
 void DestroyAssets(void);
-void InitSnakePiece(SnakePiece *snakePiece, Vector2 pos, Direction dir);
-bool IsValidDirection(Direction nextDir, Direction oposeDir);
-bool IsReadyToTurn(SnakePiece *snakePiece);
-Vector2 GetLeaderPoint(void);
 Vector2 GeneratePoint(void);
-void DrawSnakePiece(float fading, float x, float y, Color color);
+void DrawBlock(float fading, float x, float y, Color color);
+void RenderGrid(float fading);
 
 // -------------------------------------------------------------------------------------
 // Entrypoint
@@ -262,131 +249,88 @@ void InitGameScreen(void) {
     TraceLog(LOG_DEBUG, "Game Screen");
     SetRandomSeed(time(NULL));
 
-    m_soldiersCount = 3;
-    for (int i = 0; i < m_soldiersCount; ++i) {
-        Vector2 initialPos = {(m_soldiersCount - i) * GRID_WIDTH, 0};
-        InitSnakePiece(&m_soldiers[i], initialPos, DIR_RIGHT);
-    }
+    snakeHead = 2;
+    snakeTail = 0;
+    snake[0] = (Vector2){0, 0};
+    snake[1] = (Vector2){GRID_WIDTH, 0};
+    snake[2] = (Vector2){2 * GRID_WIDTH, 0};
+    snakeTimer = 0;
+    snakeSpeed = 5; // blocks per second
+    snakeDir = DIR_RIGHT;
 
-    m_speed = 50.0f;
-    m_accum = 0.0f;
-    m_frameDelay = 0.1f;
-
-    Vector2 newSoldierPos = GeneratePoint();
-    InitSnakePiece(&m_newSoldier, newSoldierPos, DIR_NONE);
+    apple = GeneratePoint();
 }
 
 void UpdateGameScreen(float dt) {
     if (IsKeyPressed(KEY_ESCAPE)) {
         SetNextScreen(SCREEN_MENU);
     }
-    m_accum += dt;
 
-    Direction nextDir = DIR_NONE;
-    if (IsKeyPressed(KEY_UP) && IsValidDirection(DIR_UP, DIR_DOWN)) {
-        nextDir = DIR_UP;
+    if (IsKeyPressed(KEY_UP)) {
+        snakeDir = DIR_UP;
     }
-    if (IsKeyPressed(KEY_RIGHT) && IsValidDirection(DIR_RIGHT, DIR_LEFT)) {
-        nextDir = DIR_RIGHT;
+    if (IsKeyPressed(KEY_RIGHT)) {
+        snakeDir = DIR_RIGHT;
     }
-    if (IsKeyPressed(KEY_DOWN) && IsValidDirection(DIR_DOWN, DIR_UP)) {
-        nextDir = DIR_DOWN;
+    if (IsKeyPressed(KEY_DOWN)) {
+        snakeDir = DIR_DOWN;
     }
-    if (IsKeyPressed(KEY_LEFT) && IsValidDirection(DIR_LEFT, DIR_RIGHT)) {
-        nextDir = DIR_LEFT;
+    if (IsKeyPressed(KEY_LEFT)) {
+        snakeDir = DIR_LEFT;
     }
 
-    if (nextDir != DIR_NONE) {
-        m_soldiers[0].nextDir = nextDir;
-        m_soldiers[0].nextPoint = GetLeaderPoint();
-    }
+    snakeTimer += dt;
+    if (snakeTimer > 1.0f / snakeSpeed) {
+        snakeTimer -= 1.0f / snakeSpeed;
 
-    Vector2 dir, vel;
+        // New head
+        int previousHead = snakeHead;
+        snakeHead = (snakeHead + 1) % SNAKE_BUFFER_SIZE;
+        snake[snakeHead].x =
+            snake[previousHead].x + dirVectors[snakeDir].x * GRID_WIDTH;
+        snake[snakeHead].y =
+            snake[previousHead].y + dirVectors[snakeDir].y * GRID_HEIGHT;
 
-    for (int i = m_soldiersCount - 1; i >= 0; --i) {
-        SnakePiece *soldier = &m_soldiers[i];
-
-        // lerp size
-        soldier->size =
-            Vector2Lerp(soldier->size, (Vector2){GRID_WIDTH, GRID_HEIGHT}, 10.0f * dt);
-
-        dir = m_dirVectors[soldier->direction];
-        vel = Vector2Scale(dir, m_speed * dt);
-        soldier->position = Vector2Add(soldier->position, vel);
-
-        if (soldier->nextDir != DIR_NONE && IsReadyToTurn(soldier)) {
-            // reached turning position
-            if (i < m_soldiersCount - 1) {
-                // update soldier behind before turning
-                SnakePiece *soldierBehind = &m_soldiers[i + 1];
-                soldierBehind->nextDir = soldier->nextDir;
-                soldierBehind->nextPoint = soldier->nextPoint;
-            }
-
-            // making the turn
-            soldier->position = soldier->nextPoint;
-            soldier->direction = soldier->nextDir;
-            soldier->nextDir = DIR_NONE;
+        // eat apple
+        if ((int)snake[snakeHead].x == (int)apple.x &&
+            (int)snake[snakeHead].y == (int)apple.y) {
+            apple = GeneratePoint();
+            snakeSpeed *= 1.1f;
+        } else {
+            // pop tail
+            snakeTail = (snakeTail + 1) % SNAKE_BUFFER_SIZE;
         }
-    }
-
-    Vector2 leaderPos = GetLeaderPoint();
-    if (Vector2Equals(leaderPos, m_newSoldier.position)) {
-        m_newSoldier.position = GeneratePoint();
-
-        SnakePiece *newSoldier = &m_soldiers[m_soldiersCount];
-        SnakePiece lastSoldier = m_soldiers[m_soldiersCount - 1];
-        *newSoldier = lastSoldier;
-        ++m_soldiersCount;
-
-        switch (lastSoldier.direction) {
-        case DIR_UP:
-            newSoldier->position.y += GRID_HEIGHT;
-            break;
-        case DIR_RIGHT:
-            newSoldier->position.x -= GRID_WIDTH;
-            break;
-        case DIR_DOWN:
-            newSoldier->position.y -= GRID_HEIGHT;
-            break;
-        case DIR_LEFT:
-            newSoldier->position.x += GRID_WIDTH;
-            break;
-        default:
-            break;
-        }
-
-        // sizing
-        newSoldier->size = (Vector2){GRID_WIDTH / 5.0f, GRID_HEIGHT / 5.0f};
     }
 }
 
 void RenderGameScreen(float fading) {
     ClearBackground(BLACK);
 
-    // draw soldiers 
-    for (int i = 0; i < m_soldiersCount; ++i) {
-        SnakePiece soldier = m_soldiers[i];
-        DrawSnakePiece(fading, soldier.position.x, soldier.position.y, WHITE);
+    // debug drawing
+    RenderGrid(fading);
+
+    // render apple
+    DrawBlock(fading, apple.x, apple.y, GREEN);
+
+    // draw apple
+    int tail = snakeTail;
+    while (tail != snakeHead) {
+        Vector2 snakePart = snake[tail];
+        DrawBlock(fading, snakePart.x, snakePart.y, WHITE);
+        tail = (tail + 1) % SNAKE_BUFFER_SIZE;
     }
 
-    // draw new soldier
-    DrawSnakePiece(fading, m_newSoldier.position.x, m_newSoldier.position.y, GREEN);
-
-    // debug drawing
-    // RenderGrid();
-
-    // draw leader
-    // DrawRectangleLines(m_soldiers[0].position.x, m_soldiers[0].position.y, GRID_WIDTH, GRID_HEIGHT, BLUE);
+    // draw head
+    DrawBlock(fading, snake[snakeHead].x, snake[snakeHead].y, WHITE);
 }
 
 void InitAssets(void) { ChangeDirectory(ASSET_PATH); }
 
 void DestroyAssets(void) {}
 
-void DrawSnakePiece(float fading, float x, float y, Color color) {
-    int gridX = ((int) x / GRID_WIDTH) * GRID_WIDTH;
-    int gridY = ((int) y / GRID_HEIGHT) * GRID_HEIGHT;
+void DrawBlock(float fading, float x, float y, Color color) {
+    int gridX = ((int)x / GRID_WIDTH) * GRID_WIDTH;
+    int gridY = ((int)y / GRID_HEIGHT) * GRID_HEIGHT;
     Rectangle rect = {gridX, gridY, GRID_WIDTH, GRID_HEIGHT};
     Rectangle innerRect = {gridX + GRID_MARGIN, gridY + GRID_MARGIN,
                            GRID_WIDTH - 2 * GRID_MARGIN, GRID_HEIGHT - 2 * GRID_MARGIN};
@@ -394,74 +338,26 @@ void DrawSnakePiece(float fading, float x, float y, Color color) {
     DrawRectangleRec(innerRect, Fade(color, fading));
 }
 
-void InitSnakePiece(SnakePiece *soldier, Vector2 pos, Direction dir) {
-    soldier->position = pos;
-    soldier->size = (Vector2) { GRID_WIDTH, GRID_HEIGHT };
-    soldier->direction = dir;
-    soldier->nextDir = DIR_NONE;
-    soldier->nextPoint = soldier->position;
-}
-
-bool IsValidDirection(Direction nextDir, Direction oposeDir) {
-    SnakePiece leader = m_soldiers[0];
-    return nextDir != DIR_NONE && nextDir != leader.direction
-        && oposeDir != leader.direction;
-}
-
-bool IsReadyToTurn(SnakePiece *soldier) {
-    switch (soldier->direction) {
-        case DIR_UP:
-            return FloatEquals(soldier->position.x, soldier->nextPoint.x) && 
-                soldier->position.y < soldier->nextPoint.y;
-        case DIR_RIGHT:
-            return soldier->position.x > soldier->nextPoint.x &&
-                FloatEquals(soldier->position.y, soldier->nextPoint.y);
-        case DIR_DOWN:
-            return FloatEquals(soldier->position.x, soldier->nextPoint.x) && 
-                soldier->position.y > soldier->nextPoint.y;
-        case DIR_LEFT:
-            return soldier->position.x < soldier->nextPoint.x &&
-                FloatEquals(soldier->position.y, soldier->nextPoint.y);
-        default:
-            return false;
-    }
-}
-
-Vector2 GetLeaderPoint(void) {
-    SnakePiece leader = m_soldiers[0];
-    Vector2 point = leader.position;
-
-    point.x = leader.direction == DIR_RIGHT ? point.x + GRID_WIDTH : point.x;
-    point.y = leader.direction == DIR_DOWN ? point.y + GRID_HEIGHT : point.y;
-
-    point.x = floorf(point.x/GRID_WIDTH)*GRID_WIDTH;
-    point.y = floorf(point.y/GRID_HEIGHT)*GRID_HEIGHT;
-
-    return point;
-}
-
 Vector2 GeneratePoint(void) {
     Vector2 point;
 
-    point.x = GetRandomValue(0, SCREEN_WIDTH/GRID_WIDTH - 1)*GRID_WIDTH;
-    point.y = GetRandomValue(0, SCREEN_HEIGHT/GRID_HEIGHT - 1)*GRID_HEIGHT;
+    point.x = GetRandomValue(0, SCREEN_WIDTH / GRID_WIDTH - 1) * GRID_WIDTH;
+    point.y = GetRandomValue(0, SCREEN_HEIGHT / GRID_HEIGHT - 1) * GRID_HEIGHT;
 
     return point;
 }
 
-static void RenderGrid(void) {
+void RenderGrid(float fading) {
+    Color gridColor = {20, 20, 20, 255};
     int linesWidth, linesHeight;
 
-    linesWidth = SCREEN_WIDTH/GRID_WIDTH;
-    linesHeight = SCREEN_HEIGHT/GRID_HEIGHT;
+    gridColor = Fade(gridColor, fading);
+    linesWidth = SCREEN_WIDTH / GRID_WIDTH;
+    linesHeight = SCREEN_HEIGHT / GRID_HEIGHT;
 
-    for (int i = 0; i < linesWidth; ++i) {
-        // draw vertical lines
-        DrawLine(i*GRID_WIDTH, 0, i*GRID_WIDTH, SCREEN_HEIGHT, WHITE);
-    }
-
-    for (int i = 0; i < linesHeight; ++i) {
-        // draw horizontal lines
-        DrawLine(0, i*GRID_HEIGHT, SCREEN_WIDTH, i*GRID_HEIGHT, WHITE);
+    for (int y = 0; y < linesHeight; ++y) {
+        for (int x = 0; x < linesWidth; ++x) {
+            DrawBlock(fading, x * GRID_WIDTH, y * GRID_HEIGHT, gridColor);
+        }
     }
 }
